@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: solana-tracker-app
+    environment:
+      # Server Configuration
+      - PORT=3000
+      - NODE_ENV=${NODE_ENV:-production}
+      
+      # Redis Configuration (use service name as host)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-0}
+      
+      # Telegram Configuration
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      
+      # Pushover Configuration
+      - PUSHOVER_USER_KEY=${PUSHOVER_USER_KEY}
+      - PUSHOVER_APP_TOKEN=${PUSHOVER_APP_TOKEN}
+      
+      # Solana Configuration
+      - TARGET_TOKEN_MINT=${TARGET_TOKEN_MINT}
+      - TRACKED_WALLETS=${TRACKED_WALLETS}
+      
+      # Helius Configuration
+      - HELIUS_API_KEY=${HELIUS_API_KEY}
+      - HELIUS_WEBHOOK_URL=${HELIUS_WEBHOOK_URL}
+      
+      # Thresholds
+      - PRICE_THRESHOLD_USD=${PRICE_THRESHOLD_USD:-300}
+      - SWAP_COUNT_THRESHOLD=${SWAP_COUNT_THRESHOLD:-10}
+      - SWAP_TIME_WINDOW_SECONDS=${SWAP_TIME_WINDOW_SECONDS:-3600}
+      
+      # API Configuration
+      - DEX_SCREENER_API_URL=${DEX_SCREENER_API_URL:-https://api.dexscreener.com/latest/dex/tokens}
+      - PRICE_CACHE_TTL_SECONDS=${PRICE_CACHE_TTL_SECONDS:-60}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - solana-tracker-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: solana-tracker-redis
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - solana-tracker-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    container_name: solana-tracker-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - solana-tracker-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  solana-tracker-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
+  nginx-logs:
+    driver: local

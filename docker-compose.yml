@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: solana-tracker-app
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # Server Configuration
+      - PORT=3000
+      - NODE_ENV=${NODE_ENV:-production}
+      
+      # Redis Configuration (use service name as host)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-0}
+      
+      # Telegram Configuration
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      
+      # Pushover Configuration
+      - PUSHOVER_USER_KEY=${PUSHOVER_USER_KEY}
+      - PUSHOVER_APP_TOKEN=${PUSHOVER_APP_TOKEN}
+      
+      # Solana Configuration
+      - TARGET_TOKEN_MINT=${TARGET_TOKEN_MINT}
+      - TRACKED_WALLETS=${TRACKED_WALLETS}
+      
+      # Thresholds
+      - PRICE_THRESHOLD_USD=${PRICE_THRESHOLD_USD:-300}
+      - SWAP_COUNT_THRESHOLD=${SWAP_COUNT_THRESHOLD:-10}
+      - SWAP_TIME_WINDOW_SECONDS=${SWAP_TIME_WINDOW_SECONDS:-3600}
+      
+      # API Configuration
+      - DEX_SCREENER_API_URL=${DEX_SCREENER_API_URL:-https://api.dexscreener.com/latest/dex/tokens}
+      - PRICE_CACHE_TTL_SECONDS=${PRICE_CACHE_TTL_SECONDS:-60}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - solana-tracker-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: solana-tracker-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - solana-tracker-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+networks:
+  solana-tracker-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
