@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: solana-tracker:latest
     container_name: solana-tracker-app
     environment:
       # Server Configuration
