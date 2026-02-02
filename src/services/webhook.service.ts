@@ -77,6 +77,7 @@ export class WebhookService {
           walletAddress,
           tokenMint: input.mint,
           tokenAmount: parseFloat(input.rawTokenAmount.tokenAmount),
+          decimals: input.rawTokenAmount.decimals,
           transactionSignature: payload.signature,
           timestamp: payload.timestamp,
           type: 'sell',
@@ -108,6 +109,7 @@ export class WebhookService {
           walletAddress,
           tokenMint: output.mint,
           tokenAmount: parseFloat(output.rawTokenAmount.tokenAmount),
+          decimals: output.rawTokenAmount.decimals,
           transactionSignature: payload.signature,
           timestamp: payload.timestamp,
           type: 'buy',
@@ -133,9 +135,8 @@ export class WebhookService {
    */
   private async processSwap(swap: ParsedSwap): Promise<void> {
     try {
-      // Get token decimals from the amount (we'll assume standard decimals, or you can fetch from token metadata)
-      // For most SPL tokens, decimals are 9, but you may need to fetch this dynamically
-      const decimals = 9; // Default for most Solana tokens
+      // Use actual token decimals from the transaction
+      const decimals = swap.decimals;
       
       // Calculate USD value
       const usdValue = await this.priceService.calculateUsdValue(

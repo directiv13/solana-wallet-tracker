@@ -138,6 +138,7 @@ export interface ParsedSwap {
   walletAddress: string;
   tokenMint: string;
   tokenAmount: number;
+  decimals: number;
   transactionSignature: string;
   timestamp: number;
   type: 'buy' | 'sell';
