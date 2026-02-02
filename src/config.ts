@@ -37,6 +37,7 @@ export interface Config {
   };
 
   // Thresholds
+  telegramThresholdUsd: number;
   priceThresholdUsd: number;
   swapTimeWindowSeconds: number;
 
@@ -99,6 +100,7 @@ export const config: Config = {
     webhookUrl: getEnvVar('HELIUS_WEBHOOK_URL'),
   },
 
+  telegramThresholdUsd: getEnvVarAsNumber('TELEGRAM_THRESHOLD_USD', 500),
   priceThresholdUsd: getEnvVarAsNumber('PRICE_THRESHOLD_USD', 300),
   swapTimeWindowSeconds: getEnvVarAsNumber('SWAP_TIME_WINDOW_SECONDS', 3600),
 

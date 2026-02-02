@@ -14,7 +14,7 @@ export class WebhookService {
     private priceService: PriceService,
     private notificationService: NotificationService,
     private databaseService: DatabaseService
-  ) {}
+  ) { }
 
   /**
    * Process incoming Helius webhook payload
@@ -69,7 +69,7 @@ export class WebhookService {
     for (const input of swapEvent.tokenInputs) {
       if (input.mint === config.targetTokenMint) {
         const walletAddress = input.userAccount;
-        
+
         // Check if wallet is tracked
         if (!this.isWalletTracked(walletAddress)) {
           continue;
@@ -101,7 +101,7 @@ export class WebhookService {
     for (const output of swapEvent.tokenOutputs) {
       if (output.mint === config.targetTokenMint) {
         const walletAddress = output.userAccount;
-        
+
         // Check if wallet is tracked
         if (!this.isWalletTracked(walletAddress)) {
           continue;
@@ -139,7 +139,7 @@ export class WebhookService {
     try {
       // Use actual token decimals from the transaction
       const decimals = swap.decimals;
-      
+
       // Calculate USD value
       const usdValue = await this.priceService.calculateUsdValue(
         swap.tokenMint,
@@ -151,11 +151,22 @@ export class WebhookService {
         swap.valueUsd = usdValue;
       }
 
-      // Always send Telegram notification
-      await this.notificationService.sendNotification(
-        NotificationType.TELEGRAM_ALL,
-        { swap }
-      );
+      if (usdValue !== null && usdValue >= config.telegramThresholdUsd) {
+        logger.info(
+          {
+            signature: swap.transactionSignature,
+            valueUsd: usdValue,
+            threshold: config.telegramThresholdUsd,
+          },
+          'Telegram threshold triggered: Single swap meets price threshold'
+        );
+
+        // Send both Telegram and Pushover for threshold A
+        await this.notificationService.sendNotification(
+          NotificationType.TELEGRAM_ALL,
+          { swap }
+        );
+      }
 
       // Check threshold A: single swap >= price threshold
       if (usdValue !== null && usdValue >= config.priceThresholdUsd) {
@@ -209,6 +220,7 @@ export class WebhookService {
               'Threshold B triggered: Cumulative amount meets threshold'
             );
 
+            // Send both Pushover for threshold B
             await this.notificationService.sendNotification(
               NotificationType.PUSHOVER_THRESHOLD_B,
               { swap },
@@ -236,7 +248,7 @@ export class WebhookService {
    */
   private isWalletTracked(walletAddress: string): boolean {
     const trackedWallets = this.databaseService.getWalletAddresses();
-    
+
     // If no wallets specified, track all
     if (trackedWallets.length === 0) {
       logger.warn('No wallets in database, tracking all wallets');

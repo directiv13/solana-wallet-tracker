@@ -66,7 +66,7 @@ export class NotificationService {
       const message = `
 ${emoji} **${action}** ${tokenDisplay}
 
-👤 Wallet: \`${this.truncateAddress(swap.walletAddress)}\`
+👤 Wallet: \`${swap.walletAddress}\`
 🔢 Amount: ${swap.tokenAmount.toLocaleString()}${valueDisplay}
 🔗 [View Transaction](https://solscan.io/tx/${swap.transactionSignature})
 ⏰ ${new Date(swap.timestamp * 1000).toLocaleString()}
@@ -109,7 +109,7 @@ ${emoji} **${action}** ${tokenDisplay}
       const title = `🚨 Large ${swap.type.toUpperCase()} Alert`;
       const message = `
 ${tokenSymbol || 'Token'} ${swap.type}
-Wallet: ${this.truncateAddress(swap.walletAddress)}
+Wallet: ${swap.walletAddress}
 Value: $${swap.valueUsd.toFixed(2)} USD
 Amount: ${swap.tokenAmount.toLocaleString()}
 
@@ -149,7 +149,7 @@ Cumulative ${swap.type}s: $${cumulativeAmount.toFixed(2)} USD
 Time window: ${Math.floor(config.swapTimeWindowSeconds / 60)} minutes
 
 Latest ${swap.type}:
-Wallet: ${this.truncateAddress(swap.walletAddress)}
+Wallet: ${swap.walletAddress}
 Amount: ${swap.tokenAmount.toLocaleString()}
 ${swap.valueUsd ? `Value: $${swap.valueUsd.toFixed(2)} USD` : ''}
 
@@ -232,16 +232,6 @@ View: https://solscan.io/tx/${swap.transactionSignature}
         }
       );
     });
-  }
-
-  /**
-   * Truncate Solana address for display
-   */
-  private truncateAddress(address: string): string {
-    if (address.length <= 12) {
-      return address;
-    }
-    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
   }
 
   /**
