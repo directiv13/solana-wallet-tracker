@@ -121,23 +121,47 @@ jobs:
       - name: Health check
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            cd ~/solana-tracker
+            
+            echo "Checking environment file..."
+            if [ ! -f .env ]; then
+              echo "❌ .env file not found! Please create it on the VPS."
+              echo "Run: ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'nano ~/solana-tracker/.env'"
+              exit 1
+            fi
+            
             echo "Waiting for services to start..."
-            sleep 10
+            sleep 15
+            
+            # Show container status
+            echo ""
+            echo "Container status:"
+            docker-compose ps
             
             # Check if containers are running
-            if docker-compose -f ~/solana-tracker/docker-compose.yml ps | grep -q "Up"; then
+            if docker-compose ps | grep -q "Up"; then
+              echo ""
               echo "✅ Containers are running"
             else
+              echo ""
               echo "❌ Containers failed to start"
-              docker-compose -f ~/solana-tracker/docker-compose.yml logs --tail=50
+              echo ""
+              echo "=== Docker Compose Logs ==="
+              docker-compose logs --tail=100
               exit 1
             fi
             
             # Check health endpoint
-            if curl -f http://localhost/health; then
+            echo ""
+            echo "Testing health endpoint..."
+            if curl -f http://localhost/health 2>/dev/null; then
+              echo ""
               echo "✅ Health check passed"
             else
+              echo ""
               echo "❌ Health check failed"
+              echo "Checking app logs..."
+              docker-compose logs --tail=30 app
               exit 1
             fi
           EOF
