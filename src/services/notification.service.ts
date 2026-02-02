@@ -1,4 +1,5 @@
 import { Telegraf } from 'telegraf';
+// @ts-ignore - No types available for pushover-notifications
 import Pushover from 'pushover-notifications';
 import { config } from '../config';
 import { NotificationPayload, NotificationType } from '../types';
@@ -198,7 +199,7 @@ View: https://solscan.io/tx/${swap.transactionSignature}
           priority,
           sound: priority > 0 ? 'cashregister' : 'pushover',
         },
-        (err) => {
+        (err: Error | null) => {
           if (err) {
             reject(err);
           } else {
