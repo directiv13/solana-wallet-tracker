@@ -74,19 +74,23 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.VPS_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+          
+      - name: Test SSH Connection
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "echo 'SSH connection successful'"
 
       - name: Copy files to VPS
         run: |
-          scp -i ~/.ssh/id_rsa solana-tracker.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/solana-tracker/
-          scp -i ~/.ssh/id_rsa docker-compose.prod.yml ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/solana-tracker/docker-compose.yml
-          scp -i ~/.ssh/id_rsa -r nginx ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/solana-tracker/
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no solana-tracker.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/solana-tracker/
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.prod.yml ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/solana-tracker/docker-compose.yml
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -r nginx ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/solana-tracker/
 
       - name: Deploy on VPS
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd ~/solana-tracker
             
             # Load new image
@@ -116,7 +120,7 @@ jobs:
 
       - name: Health check
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             echo "Waiting for services to start..."
             sleep 10
             
