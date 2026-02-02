@@ -330,6 +330,7 @@ async function start() {
       targetTokenMint: config.targetTokenMint,
       priceThresholdUsd: config.priceThresholdUsd,
       swapTimeWindowSeconds: config.swapTimeWindowSeconds,
+      adminUserIds: config.telegram.adminUserIds,
     }, 'Configuration loaded');
 
     // Check Redis connection
