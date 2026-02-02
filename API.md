@@ -39,8 +39,8 @@ Check the health status of the application and its dependencies.
   "config": {
     "targetTokenMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     "trackedWalletsCount": 2,
+    "pushoverSubscribersCount": 0,
     "priceThresholdUsd": 300,
-    "swapCountThreshold": 10,
     "swapTimeWindowSeconds": 3600
   }
 }
@@ -166,37 +166,7 @@ curl -X POST http://localhost:3000/test/notifications
 
 ---
 
-### 4. Swap Statistics
-
-Get current swap count for the target token within the sliding time window.
-
-**Endpoint**: `GET /stats/swaps`
-
-**Response**: `200 OK`
-
-```json
-{
-  "tokenMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-  "swapCount": 7,
-  "timeWindowSeconds": 3600,
-  "threshold": 10
-}
-```
-
-**Fields**:
-- `tokenMint`: The token being tracked
-- `swapCount`: Number of swaps in current time window
-- `timeWindowSeconds`: Size of the time window in seconds
-- `threshold`: Threshold for Pushover Threshold B alert
-
-**Example**:
-```bash
-curl http://localhost:3000/stats/swaps
-```
-
----
-
-### 5. Token Price
+### 4. Token Price
 
 Get the current cached price of the target token in USD.
 

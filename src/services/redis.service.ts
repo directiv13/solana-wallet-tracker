@@ -7,7 +7,9 @@ const logger = pino({ name: 'redis-service' });
 export class RedisService {
   private client: Redis;
   private readonly PRICE_CACHE_PREFIX = 'price:';
-  private readonly SWAP_WINDOW_PREFIX = 'swap_window:';
+  private readonly BUY_AMOUNT_PREFIX = 'buy_amount:';
+  private readonly SELL_AMOUNT_PREFIX = 'sell_amount:';
+  private readonly COOLDOWN_PREFIX = 'cooldown:';
 
   constructor() {
     this.client = new Redis({
@@ -72,76 +74,94 @@ export class RedisService {
   }
 
   /**
-   * Add a swap event to the sliding window using Redis ZSET
-   * Returns the count of swaps in the current time window
+   * Add USD amount to cumulative buy/sell tracking in time window
+   * Returns the total cumulative amount in the current window
    */
-  async addSwapToWindow(
+  async addAmountToWindow(
     tokenMint: string,
+    type: 'buy' | 'sell',
+    usdAmount: number,
     timestamp: number
   ): Promise<number> {
     try {
-      const key = `${this.SWAP_WINDOW_PREFIX}${tokenMint}`;
+      const prefix = type === 'buy' ? this.BUY_AMOUNT_PREFIX : this.SELL_AMOUNT_PREFIX;
+      const key = `${prefix}${tokenMint}`;
       const windowStart = timestamp - config.swapTimeWindowSeconds;
 
-      // Lua script for atomic sliding window operations
+      // Lua script for atomic operations:
       // 1. Remove old entries outside the time window
-      // 2. Add new swap event
-      // 3. Return count of swaps in window
+      // 2. Add new amount with timestamp as score and amount as member value
+      // 3. Sum all amounts in current window
       const luaScript = `
         local key = KEYS[1]
         local windowStart = tonumber(ARGV[1])
         local timestamp = tonumber(ARGV[2])
-        local ttl = tonumber(ARGV[3])
+        local amount = tonumber(ARGV[3])
+        local ttl = tonumber(ARGV[4])
         
         -- Remove entries older than window start
         redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
         
-        -- Add new swap with timestamp as score
-        redis.call('ZADD', key, timestamp, timestamp)
+        -- Add new amount (use timestamp:amount as member to ensure uniqueness)
+        local member = timestamp .. ':' .. amount
+        redis.call('ZADD', key, timestamp, member)
         
-        -- Set expiry on the key (cleanup)
+        -- Set expiry on the key
         redis.call('EXPIRE', key, ttl)
         
-        -- Count swaps in current window
-        local count = redis.call('ZCOUNT', key, windowStart, '+inf')
+        -- Get all amounts in current window and sum them
+        local entries = redis.call('ZRANGEBYSCORE', key, windowStart, '+inf')
+        local total = 0
+        for i, entry in ipairs(entries) do
+          local amount_str = string.match(entry, ':(.+)')
+          if amount_str then
+            total = total + tonumber(amount_str)
+          end
+        end
         
-        return count
+        return total
       `;
 
-      const count = await this.client.eval(
+      const totalAmount = await this.client.eval(
         luaScript,
         1,
         key,
         windowStart.toString(),
         timestamp.toString(),
-        (config.swapTimeWindowSeconds + 300).toString() // Add 5 min buffer for cleanup
+        usdAmount.toString(),
+        (config.swapTimeWindowSeconds + 300).toString()
       ) as number;
 
-      return count;
+      return totalAmount;
     } catch (error) {
-      logger.error({ error, tokenMint, timestamp }, 'Error adding swap to window');
+      logger.error({ error, tokenMint, type, usdAmount }, 'Error adding amount to window');
       throw error;
     }
   }
 
   /**
-   * Get current count of swaps in the sliding window
+   * Check if notification cooldown is active
    */
-  async getSwapCount(tokenMint: string, timestamp: number): Promise<number> {
+  async isInCooldown(key: string): Promise<boolean> {
     try {
-      const key = `${this.SWAP_WINDOW_PREFIX}${tokenMint}`;
-      const windowStart = timestamp - config.swapTimeWindowSeconds;
-
-      const count = await this.client.zcount(
-        key,
-        windowStart,
-        '+inf'
-      );
-
-      return count;
+      const cooldownKey = `${this.COOLDOWN_PREFIX}${key}`;
+      const exists = await this.client.exists(cooldownKey);
+      return exists === 1;
     } catch (error) {
-      logger.error({ error, tokenMint }, 'Error getting swap count');
-      return 0;
+      logger.error({ error, key }, 'Error checking cooldown');
+      return false;
+    }
+  }
+
+  /**
+   * Set notification cooldown
+   */
+  async setCooldown(key: string, seconds: number): Promise<void> {
+    try {
+      const cooldownKey = `${this.COOLDOWN_PREFIX}${key}`;
+      await this.client.setex(cooldownKey, seconds, '1');
+    } catch (error) {
+      logger.error({ error, key, seconds }, 'Error setting cooldown');
     }
   }
 

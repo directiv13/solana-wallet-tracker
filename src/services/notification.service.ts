@@ -3,22 +3,18 @@ import { Telegraf } from 'telegraf';
 import Pushover from 'pushover-notifications';
 import { config } from '../config';
 import { NotificationPayload, NotificationType } from '../types';
+import { DatabaseService } from './database.service';
 import pino from 'pino';
 
 const logger = pino({ name: 'notification-service' });
 
 export class NotificationService {
   private telegramBot: Telegraf;
-  private pushoverClient: Pushover;
-  private lastPushoverThresholdBNotification: number = 0;
-  private readonly PUSHOVER_COOLDOWN_MS = 300000; // 5 minutes cooldown for threshold B
+  private databaseService: DatabaseService;
 
-  constructor() {
+  constructor(databaseService: DatabaseService) {
     this.telegramBot = new Telegraf(config.telegram.botToken);
-    this.pushoverClient = new Pushover({
-      user: config.pushover.userKey,
-      token: config.pushover.appToken,
-    });
+    this.databaseService = databaseService;
 
     logger.info('Notification service initialized');
   }
@@ -29,7 +25,7 @@ export class NotificationService {
   async sendNotification(
     type: NotificationType,
     payload: NotificationPayload,
-    additionalContext?: { swapCount?: number }
+    additionalContext?: { cumulativeAmount?: number }
   ): Promise<void> {
     try {
       switch (type) {
@@ -40,7 +36,7 @@ export class NotificationService {
           await this.sendPushoverThresholdA(payload);
           break;
         case NotificationType.PUSHOVER_THRESHOLD_B:
-          await this.sendPushoverThresholdB(payload, additionalContext?.swapCount || 0);
+          await this.sendPushoverThresholdB(payload, additionalContext?.cumulativeAmount || 0);
           break;
         default:
           logger.warn({ type }, 'Unknown notification type');
@@ -120,7 +116,7 @@ Amount: ${swap.tokenAmount.toLocaleString()}
 View: https://solscan.io/tx/${swap.transactionSignature}
       `.trim();
 
-      await this.sendPushoverMessage(title, message, 1); // Priority 1 (high)
+      await this.sendPushoverToAllSubscribers(title, message, 1); // Priority 1 (high)
 
       logger.info(
         {
@@ -137,62 +133,90 @@ View: https://solscan.io/tx/${swap.transactionSignature}
   }
 
   /**
-   * Send Pushover notification for threshold B (10 swaps in 1 hour)
+   * Send Pushover notification for threshold B (cumulative amount >= threshold in time window)
    */
   private async sendPushoverThresholdB(
     payload: NotificationPayload,
-    swapCount: number
+    cumulativeAmount: number
   ): Promise<void> {
     try {
-      // Check cooldown to prevent spam
-      const now = Date.now();
-      if (now - this.lastPushoverThresholdBNotification < this.PUSHOVER_COOLDOWN_MS) {
-        logger.info('Skipping threshold B notification due to cooldown');
-        return;
-      }
-
       const { swap, tokenSymbol } = payload;
       
-      const title = `⚡ High Activity Alert`;
+      const title = `⚡ Volume Alert: ${swap.type.toUpperCase()}`;
       const message = `
-${tokenSymbol || 'Token'} trading surge detected!
-${swapCount} swaps in last hour
+${tokenSymbol || 'Token'} ${swap.type} volume surge!
+Cumulative ${swap.type}s: $${cumulativeAmount.toFixed(2)} USD
+Time window: ${Math.floor(config.swapTimeWindowSeconds / 60)} minutes
 
-Latest swap:
-Type: ${swap.type.toUpperCase()}
+Latest ${swap.type}:
 Wallet: ${this.truncateAddress(swap.walletAddress)}
+Amount: ${swap.tokenAmount.toLocaleString()}
 ${swap.valueUsd ? `Value: $${swap.valueUsd.toFixed(2)} USD` : ''}
 
 View: https://solscan.io/tx/${swap.transactionSignature}
       `.trim();
 
-      await this.sendPushoverMessage(title, message, 1); // Priority 1 (high)
-
-      this.lastPushoverThresholdBNotification = now;
+      await this.sendPushoverToAllSubscribers(title, message, 1); // Priority 1 (high)
 
       logger.info(
         {
-          swapCount,
+          type: swap.type,
+          cumulativeAmount,
           signature: swap.transactionSignature,
         },
         'Pushover threshold B notification sent'
       );
     } catch (error) {
-      logger.error({ error, payload, swapCount }, 'Error sending Pushover threshold B notification');
+      logger.error({ error, payload, cumulativeAmount }, 'Error sending Pushover threshold B notification');
       throw error;
     }
+  }
+
+  /**
+   * Send Pushover message to all subscribed users
+   */
+  private async sendPushoverToAllSubscribers(
+    title: string,
+    message: string,
+    priority: number = 0
+  ): Promise<void> {
+    const subscriptions = this.databaseService.getAllPushoverSubscriptions();
+    
+    if (subscriptions.length === 0) {
+      logger.warn('No Pushover subscriptions found, skipping notification');
+      return;
+    }
+
+    logger.info({ count: subscriptions.length }, 'Sending Pushover to all subscribers');
+
+    const promises = subscriptions.map(async (sub) => {
+      try {
+        const pushoverClient = new Pushover({
+          user: sub.pushoverUserKey,
+          token: config.pushover.appToken,
+        });
+
+        await this.sendPushoverMessage(pushoverClient, title, message, priority);
+        logger.info({ userId: sub.userId }, 'Pushover sent to subscriber');
+      } catch (error) {
+        logger.error({ error, userId: sub.userId }, 'Failed to send Pushover to subscriber');
+      }
+    });
+
+    await Promise.allSettled(promises);
   }
 
   /**
    * Send Pushover message
    */
   private async sendPushoverMessage(
+    pushoverClient: Pushover,
     title: string,
     message: string,
     priority: number = 0
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.pushoverClient.send(
+      pushoverClient.send(
         {
           title,
           message,
@@ -242,7 +266,20 @@ View: https://solscan.io/tx/${swap.transactionSignature}
    */
   async testPushover(): Promise<boolean> {
     try {
+      const subscriptions = this.databaseService.getAllPushoverSubscriptions();
+      
+      if (subscriptions.length === 0) {
+        logger.warn('No Pushover subscriptions found to test');
+        return false;
+      }
+
+      const testClient = new Pushover({
+        user: subscriptions[0].pushoverUserKey,
+        token: config.pushover.appToken,
+      });
+
       await this.sendPushoverMessage(
+        testClient,
         'Test Notification',
         '✅ Pushover integration connected successfully!',
         0

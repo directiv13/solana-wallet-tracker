@@ -3,6 +3,7 @@ import { config } from '../config';
 import { RedisService } from './redis.service';
 import { PriceService } from './price.service';
 import { NotificationService } from './notification.service';
+import { DatabaseService } from './database.service';
 import pino from 'pino';
 
 const logger = pino({ name: 'webhook-service' });
@@ -11,7 +12,8 @@ export class WebhookService {
   constructor(
     private redisService: RedisService,
     private priceService: PriceService,
-    private notificationService: NotificationService
+    private notificationService: NotificationService,
+    private databaseService: DatabaseService
   ) {}
 
   /**
@@ -155,15 +157,15 @@ export class WebhookService {
         { swap }
       );
 
-      // Check threshold A: single swap > $300
-      if (usdValue !== null && usdValue > config.priceThresholdUsd) {
+      // Check threshold A: single swap >= price threshold
+      if (usdValue !== null && usdValue >= config.priceThresholdUsd) {
         logger.info(
           {
             signature: swap.transactionSignature,
             valueUsd: usdValue,
             threshold: config.priceThresholdUsd,
           },
-          'Threshold A triggered'
+          'Threshold A triggered: Single swap meets price threshold'
         );
 
         await this.notificationService.sendNotification(
@@ -172,36 +174,56 @@ export class WebhookService {
         );
       }
 
-      // Check threshold B: 10 swaps in 1 hour
-      const swapCount = await this.redisService.addSwapToWindow(
-        swap.tokenMint,
-        swap.timestamp
-      );
+      // Check threshold B: cumulative buy/sell amount >= price threshold in time window
+      if (usdValue !== null) {
+        const cumulativeAmount = await this.redisService.addAmountToWindow(
+          swap.tokenMint,
+          swap.type,
+          usdValue,
+          swap.timestamp
+        );
 
-      logger.info(
-        {
-          tokenMint: swap.tokenMint,
-          swapCount,
-          threshold: config.swapCountThreshold,
-        },
-        'Current swap count in window'
-      );
-
-      if (swapCount >= config.swapCountThreshold) {
         logger.info(
           {
-            signature: swap.transactionSignature,
-            swapCount,
-            threshold: config.swapCountThreshold,
+            tokenMint: swap.tokenMint,
+            type: swap.type,
+            cumulativeAmount,
+            threshold: config.priceThresholdUsd,
           },
-          'Threshold B triggered'
+          'Current cumulative amount in window'
         );
 
-        await this.notificationService.sendNotification(
-          NotificationType.PUSHOVER_THRESHOLD_B,
-          { swap },
-          { swapCount }
-        );
+        if (cumulativeAmount >= config.priceThresholdUsd) {
+          // Check cooldown to prevent spam
+          const cooldownKey = `${swap.tokenMint}:${swap.type}:threshold_b`;
+          const inCooldown = await this.redisService.isInCooldown(cooldownKey);
+
+          if (!inCooldown) {
+            logger.info(
+              {
+                signature: swap.transactionSignature,
+                type: swap.type,
+                cumulativeAmount,
+                threshold: config.priceThresholdUsd,
+              },
+              'Threshold B triggered: Cumulative amount meets threshold'
+            );
+
+            await this.notificationService.sendNotification(
+              NotificationType.PUSHOVER_THRESHOLD_B,
+              { swap },
+              { cumulativeAmount }
+            );
+
+            // Set cooldown for the time window duration
+            await this.redisService.setCooldown(cooldownKey, config.swapTimeWindowSeconds);
+          } else {
+            logger.debug(
+              { cooldownKey },
+              'Threshold B triggered but in cooldown period'
+            );
+          }
+        }
       }
     } catch (error) {
       logger.error({ error, swap }, 'Error processing swap');
@@ -213,15 +235,24 @@ export class WebhookService {
    * Check if wallet is in tracked list
    */
   private isWalletTracked(walletAddress: string): boolean {
+    const trackedWallets = this.databaseService.getWalletAddresses();
+    
     // If no wallets specified, track all
-    if (config.trackedWallets.length === 0) {
+    if (trackedWallets.length === 0) {
+      logger.warn('No wallets in database, tracking all wallets');
       return true;
     }
 
     // Check if wallet is in the tracked list (case-insensitive)
-    return config.trackedWallets.some(
+    const isTracked = trackedWallets.some(
       (tracked) => tracked.toLowerCase() === walletAddress.toLowerCase()
     );
+
+    if (!isTracked) {
+      logger.debug({ walletAddress }, 'Wallet not tracked in database');
+    }
+
+    return isTracked;
   }
 
   /**

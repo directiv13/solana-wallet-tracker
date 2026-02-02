@@ -237,8 +237,8 @@ GET /health
   "config": {
     "targetTokenMint": "EPjFWdd5...",
     "trackedWalletsCount": 2,
+    "pushoverSubscribersCount": 0,
     "priceThresholdUsd": 300,
-    "swapCountThreshold": 10,
     "swapTimeWindowSeconds": 3600
   }
 }

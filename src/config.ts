@@ -19,17 +19,16 @@ export interface Config {
   telegram: {
     botToken: string;
     chatId: string;
+    adminUserIds: number[];
   };
 
   // Pushover
   pushover: {
-    userKey: string;
     appToken: string;
   };
 
   // Solana
   targetTokenMint: string;
-  trackedWallets: string[];
 
   // Helius
   helius: {
@@ -39,7 +38,6 @@ export interface Config {
 
   // Thresholds
   priceThresholdUsd: number;
-  swapCountThreshold: number;
   swapTimeWindowSeconds: number;
 
   // API
@@ -84,18 +82,17 @@ export const config: Config = {
   telegram: {
     botToken: getEnvVar('TELEGRAM_BOT_TOKEN'),
     chatId: getEnvVar('TELEGRAM_CHAT_ID'),
+    adminUserIds: getEnvVar('TELEGRAM_ADMIN_USER_IDS', '')
+      .split(',')
+      .map(id => parseInt(id.trim()))
+      .filter(id => !isNaN(id)),
   },
 
   pushover: {
-    userKey: getEnvVar('PUSHOVER_USER_KEY'),
     appToken: getEnvVar('PUSHOVER_APP_TOKEN'),
   },
 
   targetTokenMint: getEnvVar('TARGET_TOKEN_MINT'),
-  trackedWallets: getEnvVar('TRACKED_WALLETS', '')
-    .split(',')
-    .map(w => w.trim())
-    .filter(w => w.length > 0),
 
   helius: {
     apiKey: getEnvVar('HELIUS_API_KEY'),
@@ -103,7 +100,6 @@ export const config: Config = {
   },
 
   priceThresholdUsd: getEnvVarAsNumber('PRICE_THRESHOLD_USD', 300),
-  swapCountThreshold: getEnvVarAsNumber('SWAP_COUNT_THRESHOLD', 10),
   swapTimeWindowSeconds: getEnvVarAsNumber('SWAP_TIME_WINDOW_SECONDS', 3600),
 
   dexScreenerApiUrl: getEnvVar(

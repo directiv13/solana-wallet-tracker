@@ -1,5 +1,6 @@
 import { createHelius } from 'helius-sdk';
 import { config } from '../config';
+import { DatabaseService } from './database.service';
 import type { Webhook, CreateWebhookRequest, UpdateWebhookRequest } from 'helius-sdk';
 import pino from 'pino';
 
@@ -7,11 +8,13 @@ const logger = pino({ name: 'helius-service' });
 
 export class HeliusService {
   private helius: ReturnType<typeof createHelius>;
+  private databaseService: DatabaseService;
 
-  constructor() {
+  constructor(databaseService: DatabaseService) {
     this.helius = createHelius({
       apiKey: config.helius.apiKey,
     });
+    this.databaseService = databaseService;
     logger.info('Helius service initialized');
   }
 
@@ -48,10 +51,23 @@ export class HeliusService {
    */
   async createWebhook(): Promise<Webhook> {
     try {
+      const walletAddresses = this.databaseService.getWalletAddresses();
+      
+      if (walletAddresses.length === 0) {
+        throw new Error('No wallets found in database. Add wallets before creating webhook.');
+      }
+
+      if (walletAddresses.length > 500) {
+        logger.warn(
+          { count: walletAddresses.length },
+          'Wallet count exceeds Helius limit of 500, using first 500'
+        );
+      }
+
       const webhookConfig: CreateWebhookRequest = {
         webhookURL: config.helius.webhookUrl,
         transactionTypes: ['SWAP'],
-        accountAddresses: config.trackedWallets,
+        accountAddresses: walletAddresses.slice(0, 500),
         webhookType: 'enhanced',
       };
 
@@ -108,10 +124,23 @@ export class HeliusService {
    */
   async updateWebhook(webhookId: string): Promise<Webhook> {
     try {
+      const walletAddresses = this.databaseService.getWalletAddresses();
+      
+      if (walletAddresses.length === 0) {
+        throw new Error('No wallets found in database. Add wallets before updating webhook.');
+      }
+
+      if (walletAddresses.length > 500) {
+        logger.warn(
+          { count: walletAddresses.length },
+          'Wallet count exceeds Helius limit of 500, using first 500'
+        );
+      }
+
       const updateConfig: UpdateWebhookRequest = {
         webhookURL: config.helius.webhookUrl,
         transactionTypes: ['SWAP'],
-        accountAddresses: config.trackedWallets,
+        accountAddresses: walletAddresses.slice(0, 500),
         webhookType: 'enhanced',
       };
 

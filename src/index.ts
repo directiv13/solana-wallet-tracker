@@ -3,9 +3,11 @@ import cors from '@fastify/cors';
 import { config } from './config';
 import { RedisService } from './services/redis.service';
 import { PriceService } from './services/price.service';
+import { DatabaseService } from './services/database.service';
 import { NotificationService } from './services/notification.service';
 import { WebhookService } from './services/webhook.service';
 import { HeliusService } from './services/helius.service';
+import { TelegramBotService } from './services/telegram-bot.service';
 import { HeliusWebhookPayload } from './types';
 import pino from 'pino';
 
@@ -27,13 +29,16 @@ const logger = pino({
 // Initialize services
 const redisService = new RedisService();
 const priceService = new PriceService(redisService);
-const notificationService = new NotificationService();
-const heliusService = new HeliusService();
+const databaseService = new DatabaseService();
+const notificationService = new NotificationService(databaseService);
+const heliusService = new HeliusService(databaseService);
 const webhookService = new WebhookService(
   redisService,
   priceService,
-  notificationService
+  notificationService,
+  databaseService
 );
+const telegramBotService = new TelegramBotService(databaseService, heliusService);
 
 // Create Fastify server
 const server = Fastify({
@@ -62,9 +67,9 @@ server.get('/health', async (_request, reply) => {
     },
     config: {
       targetTokenMint: config.targetTokenMint,
-      trackedWalletsCount: config.trackedWallets.length,
+      trackedWalletsCount: databaseService.getWalletCount(),
+      pushoverSubscribersCount: databaseService.getAllPushoverSubscriptions().length,
       priceThresholdUsd: config.priceThresholdUsd,
-      swapCountThreshold: config.swapCountThreshold,
       swapTimeWindowSeconds: config.swapTimeWindowSeconds,
     },
   };
@@ -137,29 +142,6 @@ server.post('/test/notifications', async (_request, reply) => {
     logger.error({ error }, 'Error testing notifications');
     return reply.code(500).send({
       error: 'Failed to test notifications',
-    });
-  }
-});
-
-// Get current swap count for token
-server.get('/stats/swaps', async (_request, reply) => {
-  try {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const swapCount = await redisService.getSwapCount(
-      config.targetTokenMint,
-      timestamp
-    );
-
-    return reply.code(200).send({
-      tokenMint: config.targetTokenMint,
-      swapCount,
-      timeWindowSeconds: config.swapTimeWindowSeconds,
-      threshold: config.swapCountThreshold,
-    });
-  } catch (error) {
-    logger.error({ error }, 'Error getting swap stats');
-    return reply.code(500).send({
-      error: 'Failed to get swap statistics',
     });
   }
 });
@@ -346,9 +328,8 @@ async function start() {
     logger.info('Validating configuration...');
     logger.info({
       targetTokenMint: config.targetTokenMint,
-      trackedWalletsCount: config.trackedWallets.length,
       priceThresholdUsd: config.priceThresholdUsd,
-      swapCountThreshold: config.swapCountThreshold,
+      swapTimeWindowSeconds: config.swapTimeWindowSeconds,
     }, 'Configuration loaded');
 
     // Check Redis connection
@@ -359,16 +340,27 @@ async function start() {
     logger.info('Redis connection established');
 
     // Setup Helius webhook if configured
-    if (config.trackedWallets.length > 0) {
+    const walletCount = databaseService.getWalletCount();
+    if (walletCount > 0) {
       try {
-        logger.info('Setting up Helius webhook...');
+        logger.info({ walletCount }, 'Setting up Helius webhook...');
         await heliusService.setupWebhook();
         logger.info('Helius webhook configured successfully');
       } catch (error) {
         logger.warn({ error }, 'Failed to setup Helius webhook automatically. You can set it up manually via POST /admin/webhook/setup');
       }
     } else {
-      logger.warn('No tracked wallets configured. Skipping automatic webhook setup.');
+      logger.warn('No tracked wallets in database. Add wallets via Telegram bot before setting up webhook.');
+    }
+
+    // Start Telegram bot
+    try {
+      logger.info('Starting Telegram bot...');
+      telegramBotService.launch();
+      logger.info('Telegram bot started successfully');
+    } catch (error) {
+      logger.error({ error }, 'Failed to start Telegram bot');
+      throw error;
     }
 
     // Start server
@@ -385,5 +377,32 @@ async function start() {
     process.exit(1);
   }
 }
+
+// Graceful shutdown
+async function shutdown() {
+  logger.info('Shutting down gracefully...');
+  
+  try {
+    // Stop Telegram bot
+    telegramBotService.stop();
+    logger.info('Telegram bot stopped');
+    
+    // Close server
+    await server.close();
+    logger.info('Server closed');
+    
+    // Close Redis connection
+    await redisService.close();
+    logger.info('Redis disconnected');
+    
+    process.exit(0);
+  } catch (error) {
+    logger.error({ error }, 'Error during shutdown');
+    process.exit(1);
+  }
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 start();
