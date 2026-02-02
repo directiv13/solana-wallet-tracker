@@ -35,7 +35,7 @@ export class TelegramBotService {
 
         // Error handling
         this.bot.catch((err, ctx) => {
-            logger.error({ err, chatId: ctx.chat?.id }, 'Telegram bot error');
+            logger.error({ err, chatId: ctx.chat?.id, user_id: ctx.from?.id }, 'Telegram bot error');
             ctx.reply('An error occurred processing your command. Please try again.');
         });
     }
@@ -346,28 +346,28 @@ export class TelegramBotService {
         const isAdmin = userId && this.isAdmin(userId);
 
         let helpText =
-            `🤖 **Solana Wallet Tracker Bot**\n\n` +
-            `**User Commands:**\n` +
-            `/help - Show this help message\n` +
-            `/status - Check your subscription status\n` +
-            `/enable_pushover <user_key> - Enable Pushover alerts\n` +
-            `/disable_pushover - Disable Pushover alerts\n\n`;
+            `🤖 *Solana Wallet Tracker Bot*\n\n` +
+            `*User Commands:*\n` +
+            `/help \\- Show this help message\n` +
+            `/status \\- Check your subscription status\n` +
+            `/enable\\_pushover \\<user\\_key\\> \\- Enable Pushover alerts\n` +
+            `/disable\\_pushover \\- Disable Pushover alerts\n\n`;
 
         if (isAdmin) {
             helpText +=
-                `**Admin Commands:**\n` +
-                `/add <wallet> - Add wallet to tracking\n` +
-                `/remove <wallet> - Remove wallet from tracking\n` +
-                `/list - List all tracked wallets\n` +
-                `/stats - Show tracker statistics\n\n`;
+                `*Admin Commands:*\n` +
+                `/add \\<wallet\\> \\- Add wallet to tracking\n` +
+                `/remove \\<wallet\\> \\- Remove wallet from tracking\n` +
+                `/list \\- List all tracked wallets\n` +
+                `/stats \\- Show tracker statistics\n\n`;
         }
 
         helpText +=
-            `**About Pushover:**\n` +
-            `Get your keys from: https://pushover.net/\n` +
-            `You'll receive alerts for high-value swaps and activity surges.`;
+            `*About Pushover:*\n` +
+            `Get your keys from: https://pushover\\.net/\n` +
+            `You'll receive alerts for high\\-value swaps and activity surges\\.`;
 
-        await ctx.reply(helpText, { parse_mode: 'Markdown' });
+        await ctx.reply(helpText, { parse_mode: 'MarkdownV2' });
     }
 
     async launch(): Promise<void> {
