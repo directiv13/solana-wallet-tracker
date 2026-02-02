@@ -76,28 +76,42 @@ server.get('/health', async (_request, reply) => {
 // Webhook endpoint
 server.post('/webhook', async (request, reply) => {
   try {
-    const payload = request.body as HeliusWebhookPayload;
+    const body = request.body as any;
+    
+    // Helius sends an array of transactions
+    const payloads: HeliusWebhookPayload[] = Array.isArray(body) ? body : [body];
+    
+    logger.info({ count: payloads.length }, 'Received webhook with transactions');
 
-    // Validate payload
-    if (!webhookService.validatePayload(payload)) {
-      return reply.code(400).send({
-        error: 'Invalid payload structure',
-        message: 'The webhook payload does not match the expected structure',
+    // Validate and process each transaction
+    let processed = 0;
+    let skipped = 0;
+    
+    for (const payload of payloads) {
+      // Validate payload
+      if (!webhookService.validatePayload(payload)) {
+        logger.warn({ payload }, 'Skipping invalid payload');
+        skipped++;
+        continue;
+      }
+
+      // Process webhook asynchronously (don't block response)
+      webhookService.processWebhook(payload).catch((error) => {
+        logger.error(
+          { error, signature: payload.signature },
+          'Error processing webhook asynchronously'
+        );
       });
+      
+      processed++;
     }
-
-    // Process webhook asynchronously (don't block response)
-    webhookService.processWebhook(payload).catch((error) => {
-      logger.error(
-        { error, signature: payload.signature },
-        'Error processing webhook asynchronously'
-      );
-    });
 
     // Return success immediately
     return reply.code(200).send({
       success: true,
-      signature: payload.signature,
+      processed,
+      skipped,
+      total: payloads.length,
       message: 'Webhook received and queued for processing',
     });
   } catch (error) {
