@@ -19,7 +19,7 @@ export interface TrackedWallet {
 export class DatabaseService {
   private db: Database.Database;
 
-  constructor(dbPath: string = './data/tracker.db') {
+  constructor(dbPath: string = '/app/data/tracker.db') {
     // Ensure directory exists
     const dir = path.dirname(dbPath);
     const fs = require('fs');
