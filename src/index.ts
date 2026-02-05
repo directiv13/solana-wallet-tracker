@@ -365,7 +365,8 @@ async function start() {
       logger.error({ error }, 'Failed to start Telegram bot');
       throw error;
     }
-cheduler
+
+    // Start scheduler
     try {
       logger.info('Starting scheduler...');
       schedulerService.start();
@@ -375,7 +376,6 @@ cheduler
       throw error;
     }
 
-    // Start s
     // Start server
     await server.listen({
       port: config.port,
