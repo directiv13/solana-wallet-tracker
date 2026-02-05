@@ -140,6 +140,54 @@ export class RedisService {
   }
 
   /**
+   * Get current cumulative amount in window for a token type
+   */
+  async getCumulativeAmount(
+    tokenMint: string,
+    type: 'buy' | 'sell'
+  ): Promise<number> {
+    try {
+      const prefix = type === 'buy' ? this.BUY_AMOUNT_PREFIX : this.SELL_AMOUNT_PREFIX;
+      const key = `${prefix}${tokenMint}`;
+      const now = Math.floor(Date.now() / 1000);
+      const windowStart = now - config.swapTimeWindowSeconds;
+
+      // Lua script to sum all amounts in current window
+      const luaScript = `
+        local key = KEYS[1]
+        local windowStart = tonumber(ARGV[1])
+        
+        -- Remove entries older than window start
+        redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
+        
+        -- Get all amounts in current window and sum them
+        local entries = redis.call('ZRANGEBYSCORE', key, windowStart, '+inf')
+        local total = 0
+        for i, entry in ipairs(entries) do
+          local amount_str = string.match(entry, ':(.+)')
+          if amount_str then
+            total = total + tonumber(amount_str)
+          end
+        end
+        
+        return total
+      `;
+
+      const totalAmount = await this.client.eval(
+        luaScript,
+        1,
+        key,
+        windowStart.toString()
+      ) as number;
+
+      return totalAmount || 0;
+    } catch (error) {
+      logger.error({ error, tokenMint, type }, 'Error getting cumulative amount');
+      return 0;
+    }
+  }
+
+  /**
    * Check if notification cooldown is active
    */
   async isInCooldown(key: string): Promise<boolean> {

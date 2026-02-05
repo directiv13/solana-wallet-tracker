@@ -20,6 +20,36 @@ export class NotificationService {
   }
 
   /**
+   * Send hourly cumulative summary to Telegram
+   */
+  async sendHourlySummary(buysAmount: number, sellsAmount: number): Promise<void> {
+    try {
+      const message = `
+📊 **Hourly Summary**
+
+🟢 Total Buys: $${buysAmount.toFixed(2)} USD
+🔴 Total Sells: $${sellsAmount.toFixed(2)} USD
+
+📈 Net: $${(buysAmount - sellsAmount).toFixed(2)} USD
+⏰ ${new Date().toLocaleString()}
+      `.trim();
+
+      await this.telegramBot.telegram.sendMessage(
+        config.telegram.chatId,
+        message,
+        { parse_mode: 'Markdown' }
+      );
+
+      logger.info(
+        { buysAmount, sellsAmount },
+        'Hourly summary sent to Telegram'
+      );
+    } catch (error) {
+      logger.error({ error }, 'Error sending hourly summary');
+    }
+  }
+
+  /**
    * Send notification based on type
    */
   async sendNotification(

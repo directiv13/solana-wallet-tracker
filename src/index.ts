@@ -8,6 +8,7 @@ import { NotificationService } from './services/notification.service';
 import { WebhookService } from './services/webhook.service';
 import { HeliusService } from './services/helius.service';
 import { TelegramBotService } from './services/telegram-bot.service';
+import { SchedulerService } from './services/scheduler.service';
 import { HeliusWebhookPayload } from './types';
 import pino from 'pino';
 
@@ -39,6 +40,7 @@ const webhookService = new WebhookService(
   databaseService
 );
 const telegramBotService = new TelegramBotService(databaseService, heliusService);
+const schedulerService = new SchedulerService(redisService, notificationService);
 
 // Create Fastify server
 const server = Fastify({
@@ -363,7 +365,17 @@ async function start() {
       logger.error({ error }, 'Failed to start Telegram bot');
       throw error;
     }
+cheduler
+    try {
+      logger.info('Starting scheduler...');
+      schedulerService.start();
+      logger.info('Scheduler started successfully');
+    } catch (error) {
+      logger.error({ error }, 'Failed to start scheduler');
+      throw error;
+    }
 
+    // Start s
     // Start server
     await server.listen({
       port: config.port,
