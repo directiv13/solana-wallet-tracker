@@ -26,13 +26,14 @@ export class WebhookService {
           signature: payload.signature,
           type: payload.type,
           timestamp: payload.timestamp,
+          hasSwapEvent: !!payload.events?.swap,
         },
         'Processing webhook'
       );
 
-      // Only process SWAP events
-      if (payload.type !== 'SWAP' || !payload.events?.swap) {
-        logger.debug({ type: payload.type }, 'Skipping non-SWAP event');
+      // Process any transaction that has a swap event (regardless of type)
+      if (!payload.events?.swap) {
+        logger.debug({ type: payload.type }, 'Skipping transaction without swap event');
         return;
       }
 
