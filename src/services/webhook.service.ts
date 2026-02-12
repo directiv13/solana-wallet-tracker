@@ -107,10 +107,10 @@ export class WebhookService {
         transfer.valueUsd = usdValue;
       }
 
-      // Track sequential sells for 5sells notification
+      // Track sequential sells for 5sells notification (global across all wallets)
       if (transfer.type === 'sell' && usdValue !== null && usdValue >= config.fiveSellsThresholdUsd) {
-        // Increment sequential sell counter
-        const sequentialSellCount = await this.redisService.incrementSequentialSells(transfer.walletAddress);
+        // Increment sequential sell counter globally
+        const sequentialSellCount = await this.redisService.incrementSequentialSells();
 
         logger.info(
           {
@@ -118,7 +118,7 @@ export class WebhookService {
             sequentialSellCount,
             valueUsd: usdValue,
           },
-          'Sequential sell detected'
+          'Sequential sell detected (global counter)'
         );
 
         // Check if we reached 5 sequential sells
@@ -128,34 +128,27 @@ export class WebhookService {
               walletAddress: transfer.walletAddress,
               signature: transfer.transactionSignature,
             },
-            '5 sequential sells detected - triggering notification'
+            '5 sequential sells detected globally - triggering notifications'
           );
 
-          // Send Telegram notification
-          await this.notificationService.sendNotification(
-            NotificationType.TELEGRAM_ALL,
-            { transfer }
-          );
-
-          // Send notification to 5sells subscribers
+          // Send notification to 5sells subscribers and Telegram
           await this.notificationService.sendNotification(
             NotificationType.PUSHOVER_5SELLS,
             { transfer }
           );
         }
       } else if (transfer.type === 'buy') {
-        // Reset sequential sell counter on buy
-        await this.redisService.resetSequentialSells(transfer.walletAddress);
+        // Reset sequential sell counter on buy (global)
+        await this.redisService.resetSequentialSells();
 
         logger.info(
           {
             walletAddress: transfer.walletAddress,
             valueUsd: usdValue,
           },
-          'Buy detected - reset sequential sells counter'
+          'Buy detected - reset sequential sells counter (global)'
         );
       }
-
 
       if (usdValue !== null && usdValue >= config.telegramThresholdUsd) {
         logger.info(

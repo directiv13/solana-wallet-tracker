@@ -228,46 +228,46 @@ export class RedisService {
   }
 
   /**
-   * Increment sequential sell counter for a wallet
+   * Increment sequential sell counter globally (across all wallets)
    * Returns the new count
    */
-  async incrementSequentialSells(walletAddress: string): Promise<number> {
+  async incrementSequentialSells(): Promise<number> {
     try {
-      const key = `${this.SEQUENTIAL_SELLS_PREFIX}${walletAddress}`;
+      const key = `${this.SEQUENTIAL_SELLS_PREFIX}global`;
       const count = await this.client.incr(key);
       // Set expiry for 24 hours
       await this.client.expire(key, 86400);
-      logger.info({ walletAddress, count }, 'Incremented sequential sells counter');
+      logger.info({ count }, 'Incremented sequential sells counter');
       return count;
     } catch (error) {
-      logger.error({ error, walletAddress }, 'Error incrementing sequential sells');
+      logger.error({ error }, 'Error incrementing sequential sells');
       return 0;
     }
   }
 
   /**
-   * Reset sequential sell counter for a wallet (called when a buy is detected)
+   * Reset sequential sell counter globally (called when a buy is detected)
    */
-  async resetSequentialSells(walletAddress: string): Promise<void> {
+  async resetSequentialSells(): Promise<void> {
     try {
-      const key = `${this.SEQUENTIAL_SELLS_PREFIX}${walletAddress}`;
+      const key = `${this.SEQUENTIAL_SELLS_PREFIX}global`;
       await this.client.del(key);
-      logger.info({ walletAddress }, 'Reset sequential sells counter');
+      logger.info('Reset sequential sells counter');
     } catch (error) {
-      logger.error({ error, walletAddress }, 'Error resetting sequential sells');
+      logger.error({ error }, 'Error resetting sequential sells');
     }
   }
 
   /**
-   * Get current sequential sell count for a wallet
+   * Get current sequential sell count globally
    */
-  async getSequentialSells(walletAddress: string): Promise<number> {
+  async getSequentialSells(): Promise<number> {
     try {
-      const key = `${this.SEQUENTIAL_SELLS_PREFIX}${walletAddress}`;
+      const key = `${this.SEQUENTIAL_SELLS_PREFIX}global`;
       const count = await this.client.get(key);
       return count ? parseInt(count) : 0;
     } catch (error) {
-      logger.error({ error, walletAddress }, 'Error getting sequential sells');
+      logger.error({ error }, 'Error getting sequential sells');
       return 0;
     }
   }
