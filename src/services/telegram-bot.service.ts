@@ -423,7 +423,9 @@ export class TelegramBotService {
             `/help \\- Show this help message\n` +
             `/status \\- Check your subscription status\n` +
             `/enable\\_pushover \\<user\\_key\\> \\- Enable Pushover alerts\n` +
-            `/disable\\_pushover \\- Disable Pushover alerts\n\n`;
+            `/disable\\_pushover \\- Disable Pushover alerts\n` +
+            `/enable\\_pushover\\_5sells \\<user\\_key\\> \\- Enable Pushover 5 Sells alerts\n` +
+            `/disable\\_pushover\\_5sells \\- Disable Pushover 5 Sells alerts\n\n`;
 
         if (isAdmin) {
             helpText +=
