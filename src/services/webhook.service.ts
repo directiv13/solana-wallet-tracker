@@ -1,4 +1,4 @@
-import { HeliusWebhookPayload, ParsedSwap, NotificationType } from '../types';
+import { HeliusWebhookPayload, ParsedSwap, NotificationType, ParsedTransaction } from '../types';
 import { config } from '../config';
 import { RedisService } from './redis.service';
 import { PriceService } from './price.service';
@@ -23,31 +23,22 @@ export class WebhookService {
     try {
       logger.info(
         {
-          signature: payload.signature,
-          type: payload.type,
-          timestamp: payload.timestamp,
-          hasSwapEvent: !!payload.events?.swap,
+          payload: payload
         },
         'Processing webhook'
       );
 
-      // Process any transaction that has a swap event (regardless of type)
-      if (!payload.events?.swap) {
-        logger.debug({ type: payload.type }, 'Skipping transaction without swap event');
-        return;
-      }
-
       // Parse swap events
-      const swaps = this.parseSwapEvent(payload);
+      const transfers = this.parseTransaction(payload);
 
-      if (swaps.length === 0) {
-        logger.debug('No relevant swaps found in transaction');
+      if (transfers.length === 0) {
+        logger.debug('No relevant transfers found in transaction');
         return;
       }
 
-      // Process each swap
-      for (const swap of swaps) {
-        await this.processSwap(swap);
+      // Process each transfer
+      for (const transfer of transfers) {
+        await this.processTransfer(transfer);
       }
     } catch (error) {
       logger.error({ error, signature: payload.signature }, 'Error processing webhook');
@@ -132,30 +123,69 @@ export class WebhookService {
 
     return swaps;
   }
+   
+  /**
+   * Process transaction
+   */
+  private parseTransaction(payload: HeliusWebhookPayload): ParsedTransaction[] {
+    const transfers: ParsedTransaction[] = [];
+
+    const transaction = payload.tokenTransfers.find(transfer => transfer.mint === config.targetTokenMint);
+
+    if(!transaction) {
+      return transfers;
+    }
+
+    // BUY: The token was sent to the user's account
+    if(transaction.toUserAccount === payload.feePayer) {
+      transfers.push({
+        walletAddress: transaction.toUserAccount,
+        tokenMint: transaction.mint,
+        tokenAmount: transaction.tokenAmount,
+        decimals: 0, // You may want to fetch decimals from the blockchain or config
+        transactionSignature: payload.signature,
+        timestamp: payload.timestamp,
+        type: 'buy',
+      });
+    }
+    // SELL: The token was sent from the user's account
+    else if(transaction.fromUserAccount === payload.feePayer) {
+      transfers.push({
+        walletAddress: transaction.fromUserAccount,
+        tokenMint: transaction.mint,
+        tokenAmount: transaction.tokenAmount,
+        decimals: 0, // You may want to fetch decimals from the blockchain or config
+        transactionSignature: payload.signature,
+        timestamp: payload.timestamp,
+        type: 'sell',
+      });
+    }
+    return transfers;
+  }
 
   /**
-   * Process individual swap
+   * Process individual transfer
    */
-  private async processSwap(swap: ParsedSwap): Promise<void> {
+  private async processTransfer(transfer: ParsedTransaction): Promise<void> {
     try {
       // Use actual token decimals from the transaction
-      const decimals = swap.decimals;
+      const decimals = transfer.decimals;
 
       // Calculate USD value
       const usdValue = await this.priceService.calculateUsdValue(
-        swap.tokenMint,
-        swap.tokenAmount,
+        transfer.tokenMint,
+        transfer.tokenAmount,
         decimals
       );
 
       if (usdValue !== null) {
-        swap.valueUsd = usdValue;
+        transfer.valueUsd = usdValue;
       }
 
       if (usdValue !== null && usdValue >= config.telegramThresholdUsd) {
         logger.info(
           {
-            signature: swap.transactionSignature,
+            signature: transfer.transactionSignature,
             valueUsd: usdValue,
             threshold: config.telegramThresholdUsd,
           },
@@ -165,7 +195,7 @@ export class WebhookService {
         // Send both Telegram and Pushover for threshold A
         await this.notificationService.sendNotification(
           NotificationType.TELEGRAM_ALL,
-          { swap }
+          { transfer }
         );
       }
 
@@ -173,7 +203,7 @@ export class WebhookService {
       if (usdValue !== null && usdValue >= config.priceThresholdUsd) {
         logger.info(
           {
-            signature: swap.transactionSignature,
+            signature: transfer.transactionSignature,
             valueUsd: usdValue,
             threshold: config.priceThresholdUsd,
           },
@@ -182,23 +212,23 @@ export class WebhookService {
 
         await this.notificationService.sendNotification(
           NotificationType.PUSHOVER_THRESHOLD_A,
-          { swap }
+          { transfer }
         );
       }
 
       // Check threshold B: cumulative buy/sell amount >= price threshold in time window
       if (usdValue !== null) {
         const cumulativeAmount = await this.redisService.addAmountToWindow(
-          swap.tokenMint,
-          swap.type,
+          transfer.tokenMint,
+          transfer.type,
           usdValue,
-          swap.timestamp
+          transfer.timestamp
         );
 
         logger.info(
           {
-            tokenMint: swap.tokenMint,
-            type: swap.type,
+            tokenMint: transfer.tokenMint,
+            type: transfer.type,
             cumulativeAmount,
             threshold: config.priceThresholdUsd,
           },
@@ -207,14 +237,14 @@ export class WebhookService {
 
         if (cumulativeAmount >= config.priceThresholdUsd) {
           // Check cooldown to prevent spam
-          const cooldownKey = `${swap.tokenMint}:${swap.type}:threshold_b`;
+          const cooldownKey = `${transfer.tokenMint}:${transfer.type}:threshold_b`;
           const inCooldown = await this.redisService.isInCooldown(cooldownKey);
 
           if (!inCooldown) {
             logger.info(
               {
-                signature: swap.transactionSignature,
-                type: swap.type,
+                signature: transfer.transactionSignature,
+                type: transfer.type,
                 cumulativeAmount,
                 threshold: config.priceThresholdUsd,
               },
@@ -224,7 +254,7 @@ export class WebhookService {
             // Send both Pushover for threshold B
             await this.notificationService.sendNotification(
               NotificationType.PUSHOVER_THRESHOLD_B,
-              { swap },
+              { transfer },
               { cumulativeAmount }
             );
 
@@ -239,7 +269,7 @@ export class WebhookService {
         }
       }
     } catch (error) {
-      logger.error({ error, swap }, 'Error processing swap');
+      logger.error({ error, transfer }, 'Error processing transfer');
       throw error;
     }
   }
@@ -276,7 +306,7 @@ export class WebhookService {
       return false;
     }
 
-    const required = ['signature', 'type', 'timestamp', 'events'];
+    const required = ['signature', 'timestamp'];
     const hasRequired = required.every((field) => field in payload);
 
     if (!hasRequired) {

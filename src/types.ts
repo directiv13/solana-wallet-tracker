@@ -145,13 +145,30 @@ export interface ParsedSwap {
   valueUsd?: number;
 }
 
+export interface ParsedTransaction {
+  walletAddress: string;
+  tokenMint: string;
+  tokenAmount: number;
+  decimals: number;
+  transactionSignature: string;
+  timestamp: number;
+  type: 'buy' | 'sell';
+  valueUsd?: number;
+}
+
 export interface PriceCache {
   price: number;
   timestamp: number;
 }
 
-export interface NotificationPayload {
+export interface SwapNotificationPayload {
   swap: ParsedSwap;
+  tokenSymbol?: string;
+  tokenName?: string;
+}
+
+export interface NotificationPayload {
+  transfer: ParsedTransaction;
   tokenSymbol?: string;
   tokenName?: string;
 }

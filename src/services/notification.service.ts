@@ -83,23 +83,23 @@ export class NotificationService {
     payload: NotificationPayload
   ): Promise<void> {
     try {
-      const { swap, tokenSymbol, tokenName } = payload;
+      const { transfer, tokenSymbol, tokenName } = payload;
       
-      const emoji = swap.type === 'buy' ? '🟢' : '🔴';
-      const action = swap.type === 'buy' ? 'BOUGHT' : 'SOLD';
+      const emoji = transfer.type === 'buy' ? '🟢' : '🔴';
+      const action = transfer.type === 'buy' ? 'BOUGHT' : 'SOLD';
       
       const tokenDisplay = tokenSymbol || tokenName || 'Token';
-      const valueDisplay = swap.valueUsd 
-        ? `\n💰 Value: $${swap.valueUsd.toFixed(2)} USD`
+      const valueDisplay = transfer.valueUsd 
+        ? `\n💰 Value: $${transfer.valueUsd.toFixed(2)} USD`
         : '';
 
       const message = `
 ${emoji} **${action}** ${tokenDisplay}
 
-👤 Wallet: \`${swap.walletAddress}\`
-🔢 Amount: ${swap.tokenAmount.toLocaleString()}${valueDisplay}
-🔗 [View Transaction](https://solscan.io/tx/${swap.transactionSignature})
-⏰ ${new Date(swap.timestamp * 1000).toLocaleString()}
+👤 Wallet: \`${transfer.walletAddress}\`
+🔢 Amount: ${transfer.tokenAmount.toLocaleString()}${valueDisplay}
+🔗 [View Transaction](https://solscan.io/tx/${transfer.transactionSignature})
+⏰ ${new Date(transfer.timestamp * 1000).toLocaleString()}
       `.trim();
 
       await this.telegramBot.telegram.sendMessage(
@@ -110,9 +110,9 @@ ${emoji} **${action}** ${tokenDisplay}
 
       logger.info(
         {
-          walletAddress: swap.walletAddress,
-          type: swap.type,
-          signature: swap.transactionSignature,
+          walletAddress: transfer.walletAddress,
+          type: transfer.type,
+          signature: transfer.transactionSignature,
         },
         'Telegram notification sent'
       );
@@ -129,30 +129,30 @@ ${emoji} **${action}** ${tokenDisplay}
     payload: NotificationPayload
   ): Promise<void> {
     try {
-      const { swap, tokenSymbol } = payload;
+      const { transfer, tokenSymbol } = payload;
       
-      if (!swap.valueUsd) {
+      if (!transfer.valueUsd) {
         logger.warn('Cannot send threshold A notification without USD value');
         return;
       }
 
-      const title = `🚨 Large ${swap.type.toUpperCase()} Alert`;
+      const title = `🚨 Large ${transfer.type.toUpperCase()} Alert`;
       const message = `
-${tokenSymbol || 'Token'} ${swap.type}
-Wallet: ${swap.walletAddress}
-Value: $${swap.valueUsd.toFixed(2)} USD
-Amount: ${swap.tokenAmount.toLocaleString()}
+${tokenSymbol || 'Token'} ${transfer.type}
+Wallet: ${transfer.walletAddress}
+Value: $${transfer.valueUsd.toFixed(2)} USD
+Amount: ${transfer.tokenAmount.toLocaleString()}
 
-View: https://solscan.io/tx/${swap.transactionSignature}
+View: https://solscan.io/tx/${transfer.transactionSignature}
       `.trim();
 
       await this.sendPushoverToAllSubscribers(title, message, 1); // Priority 1 (high)
 
       logger.info(
         {
-          walletAddress: swap.walletAddress,
-          valueUsd: swap.valueUsd,
-          signature: swap.transactionSignature,
+          walletAddress: transfer.walletAddress,
+          valueUsd: transfer.valueUsd,
+          signature: transfer.transactionSignature,
         },
         'Pushover threshold A notification sent'
       );
@@ -170,29 +170,29 @@ View: https://solscan.io/tx/${swap.transactionSignature}
     cumulativeAmount: number
   ): Promise<void> {
     try {
-      const { swap, tokenSymbol } = payload;
+      const { transfer, tokenSymbol } = payload;
       
-      const title = `⚡ Volume Alert: ${swap.type.toUpperCase()}`;
+      const title = `⚡ Volume Alert: ${transfer.type.toUpperCase()}`;
       const message = `
-${tokenSymbol || 'Token'} ${swap.type} volume surge!
-Cumulative ${swap.type}s: $${cumulativeAmount.toFixed(2)} USD
+${tokenSymbol || 'Token'} ${transfer.type} volume surge!
+Cumulative ${transfer.type}s: $${cumulativeAmount.toFixed(2)} USD
 Time window: ${Math.floor(config.swapTimeWindowSeconds / 60)} minutes
 
-Latest ${swap.type}:
-Wallet: ${swap.walletAddress}
-Amount: ${swap.tokenAmount.toLocaleString()}
-${swap.valueUsd ? `Value: $${swap.valueUsd.toFixed(2)} USD` : ''}
+Latest ${transfer.type}:
+Wallet: ${transfer.walletAddress}
+Amount: ${transfer.tokenAmount.toLocaleString()}
+${transfer.valueUsd ? `Value: $${transfer.valueUsd.toFixed(2)} USD` : ''}
 
-View: https://solscan.io/tx/${swap.transactionSignature}
+View: https://solscan.io/tx/${transfer.transactionSignature}
       `.trim();
 
       await this.sendPushoverToAllSubscribers(title, message, 1); // Priority 1 (high)
 
       logger.info(
         {
-          type: swap.type,
+          type: transfer.type,
           cumulativeAmount,
-          signature: swap.transactionSignature,
+          signature: transfer.transactionSignature,
         },
         'Pushover threshold B notification sent'
       );

@@ -66,7 +66,7 @@ export class HeliusService {
 
       const webhookConfig: CreateWebhookRequest = {
         webhookURL: config.helius.webhookUrl,
-        transactionTypes: ['SWAP'],
+        transactionTypes: ['ANY'],
         accountAddresses: walletAddresses.slice(0, 500),
         webhookType: 'enhanced',
       };
@@ -139,7 +139,7 @@ export class HeliusService {
 
       const updateConfig: UpdateWebhookRequest = {
         webhookURL: config.helius.webhookUrl,
-        transactionTypes: ['SWAP'],
+        transactionTypes: ['ANY'],
         accountAddresses: walletAddresses.slice(0, 500),
         webhookType: 'enhanced',
       };
