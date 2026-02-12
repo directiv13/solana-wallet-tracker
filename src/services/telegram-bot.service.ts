@@ -398,13 +398,15 @@ export class TelegramBotService {
             }
 
             const subscription = this.databaseService.getPushoverSubscription(userId);
+            const subscription5Sells = this.databaseService.getPushover5SellsSubscription(userId);
             const isAdmin = this.isAdmin(userId);
 
             await ctx.reply(
                 `👤 **Your Status**\n\n` +
                 `User ID: ${userId}\n` +
                 `Admin: ${isAdmin ? '✅ Yes' : '❌ No'}\n` +
-                `Pushover: ${subscription ? '✅ Enabled' : '❌ Disabled'}`,
+                `Pushover: ${subscription ? '✅ Enabled' : '❌ Disabled'}\n` +
+                `Pushover 5 Sells: ${subscription5Sells ? '✅ Enabled' : '❌ Disabled'}`,
                 { parse_mode: 'Markdown' }
             );
         } catch (error) {
