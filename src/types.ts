@@ -160,4 +160,5 @@ export enum NotificationType {
   TELEGRAM_ALL = 'telegram_all',
   PUSHOVER_THRESHOLD_A = 'pushover_threshold_a',
   PUSHOVER_THRESHOLD_B = 'pushover_threshold_b',
+  PUSHOVER_5SELLS = 'pushover_5sells',
 }

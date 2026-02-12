@@ -45,7 +45,7 @@ export class WebhookService {
       throw error;
     }
   }
-   
+
   /**
    * Process transaction
    */
@@ -54,15 +54,15 @@ export class WebhookService {
 
     const transaction = payload.tokenTransfers.find(transfer => transfer.mint === config.targetTokenMint);
 
-    if(!transaction) {
+    if (!transaction) {
       return transfers;
     }
 
-    if(!this.isWalletTracked(transaction.fromUserAccount) && !this.isWalletTracked(transaction.toUserAccount))
+    if (!this.isWalletTracked(transaction.fromUserAccount) && !this.isWalletTracked(transaction.toUserAccount))
       return transfers;
 
     // BUY: The token was sent to the user's account
-    if(transaction.toUserAccount === payload.feePayer) {
+    if (transaction.toUserAccount === payload.feePayer) {
       transfers.push({
         walletAddress: transaction.toUserAccount,
         tokenMint: transaction.mint,
@@ -74,7 +74,7 @@ export class WebhookService {
       });
     }
     // SELL: The token was sent from the user's account
-    else if(transaction.fromUserAccount === payload.feePayer) {
+    else if (transaction.fromUserAccount === payload.feePayer) {
       transfers.push({
         walletAddress: transaction.fromUserAccount,
         tokenMint: transaction.mint,
@@ -106,6 +106,56 @@ export class WebhookService {
       if (usdValue !== null) {
         transfer.valueUsd = usdValue;
       }
+
+      // Track sequential sells for 5sells notification
+      if (transfer.type === 'sell' && usdValue !== null && usdValue >= config.fiveSellsThresholdUsd) {
+        // Increment sequential sell counter
+        const sequentialSellCount = await this.redisService.incrementSequentialSells(transfer.walletAddress);
+
+        logger.info(
+          {
+            walletAddress: transfer.walletAddress,
+            sequentialSellCount,
+            valueUsd: usdValue,
+          },
+          'Sequential sell detected'
+        );
+
+        // Check if we reached 5 sequential sells
+        if (sequentialSellCount === 5) {
+          logger.info(
+            {
+              walletAddress: transfer.walletAddress,
+              signature: transfer.transactionSignature,
+            },
+            '5 sequential sells detected - triggering notification'
+          );
+
+          // Send Telegram notification
+          await this.notificationService.sendNotification(
+            NotificationType.TELEGRAM_ALL,
+            { transfer }
+          );
+
+          // Send notification to 5sells subscribers
+          await this.notificationService.sendNotification(
+            NotificationType.PUSHOVER_5SELLS,
+            { transfer }
+          );
+        }
+      } else if (transfer.type === 'buy') {
+        // Reset sequential sell counter on buy
+        await this.redisService.resetSequentialSells(transfer.walletAddress);
+
+        logger.info(
+          {
+            walletAddress: transfer.walletAddress,
+            valueUsd: usdValue,
+          },
+          'Buy detected - reset sequential sells counter'
+        );
+      }
+
 
       if (usdValue !== null && usdValue >= config.telegramThresholdUsd) {
         logger.info(

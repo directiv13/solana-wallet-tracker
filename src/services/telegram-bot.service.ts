@@ -24,6 +24,8 @@ export class TelegramBotService {
         // User commands
         this.bot.command('enable_pushover', this.handleEnablePushover.bind(this));
         this.bot.command('disable_pushover', this.handleDisablePushover.bind(this));
+        this.bot.command('enable_pushover_5sells', this.handleEnablePushover5Sells.bind(this));
+        this.bot.command('disable_pushover_5sells', this.handleDisablePushover5Sells.bind(this));
         this.bot.command('help', this.handleHelp.bind(this));
         this.bot.command('status', this.handleStatus.bind(this));
 
@@ -110,6 +112,76 @@ export class TelegramBotService {
         } catch (error) {
             logger.error({ error }, 'Error disabling Pushover');
             await ctx.reply('❌ Failed to disable Pushover notifications');
+        }
+    }
+
+    private async handleEnablePushover5Sells(ctx: Context): Promise<void> {
+        try {
+            const userId = ctx.from?.id;
+            if (!userId) {
+                await ctx.reply('❌ Could not identify user');
+                return;
+            }
+
+            // Parse command: /enable_pushover_5sells <user_key>
+            const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+            const parts = text.split(' ').filter(p => p.length > 0);
+
+            if (parts.length !== 2) {
+                await ctx.reply(
+                    '❌ Invalid format!\n\n' +
+                    'Usage: /enable_pushover_5sells <user_key>\n\n' +
+                    'Example:\n' +
+                    '/enable_pushover_5sells uQiRzpo4DXghDmr9QzzfQu27jqWCH\n\n' +
+                    'Get your user key from: https://pushover.net/'
+                );
+                return;
+            }
+
+            const [, userKey] = parts;
+
+            // Validate key (basic check)
+            if (userKey.length < 20) {
+                await ctx.reply('❌ Invalid Pushover user key. Key should be at least 20 characters.');
+                return;
+            }
+
+            this.databaseService.subscribePushover5Sells(userId, userKey);
+
+            await ctx.reply(
+                '✅ Pushover 5 Sells notifications enabled!\n\n' +
+                'You will now receive alerts when:\n' +
+                `• 5 sequential sells are detected (each over $${config.fiveSellsThresholdUsd})\n` +
+                '• No buys occur between the sells\n\n' +
+                'Note: This is a separate subscription from regular Pushover notifications.'
+            );
+
+            logger.info({ userId }, 'User enabled Pushover 5 Sells notifications');
+        } catch (error) {
+            logger.error({ error }, 'Error enabling Pushover 5 Sells');
+            await ctx.reply('❌ Failed to enable Pushover 5 Sells notifications');
+        }
+    }
+
+    private async handleDisablePushover5Sells(ctx: Context): Promise<void> {
+        try {
+            const userId = ctx.from?.id;
+            if (!userId) {
+                await ctx.reply('❌ Could not identify user');
+                return;
+            }
+
+            const removed = this.databaseService.unsubscribePushover5Sells(userId);
+
+            if (removed) {
+                await ctx.reply('✅ Pushover 5 Sells notifications disabled');
+                logger.info({ userId }, 'User disabled Pushover 5 Sells notifications');
+            } else {
+                await ctx.reply('ℹ️ You were not subscribed to Pushover 5 Sells notifications');
+            }
+        } catch (error) {
+            logger.error({ error }, 'Error disabling Pushover 5 Sells');
+            await ctx.reply('❌ Failed to disable Pushover 5 Sells notifications');
         }
     }
 

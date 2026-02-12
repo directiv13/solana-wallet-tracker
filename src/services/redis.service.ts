@@ -10,6 +10,7 @@ export class RedisService {
   private readonly BUY_AMOUNT_PREFIX = 'buy_amount:';
   private readonly SELL_AMOUNT_PREFIX = 'sell_amount:';
   private readonly COOLDOWN_PREFIX = 'cooldown:';
+  private readonly SEQUENTIAL_SELLS_PREFIX = 'sequential_sells:';
 
   constructor() {
     this.client = new Redis({
@@ -223,6 +224,51 @@ export class RedisService {
     } catch (error) {
       logger.error({ error }, 'Redis health check failed');
       return false;
+    }
+  }
+
+  /**
+   * Increment sequential sell counter for a wallet
+   * Returns the new count
+   */
+  async incrementSequentialSells(walletAddress: string): Promise<number> {
+    try {
+      const key = `${this.SEQUENTIAL_SELLS_PREFIX}${walletAddress}`;
+      const count = await this.client.incr(key);
+      // Set expiry for 24 hours
+      await this.client.expire(key, 86400);
+      logger.info({ walletAddress, count }, 'Incremented sequential sells counter');
+      return count;
+    } catch (error) {
+      logger.error({ error, walletAddress }, 'Error incrementing sequential sells');
+      return 0;
+    }
+  }
+
+  /**
+   * Reset sequential sell counter for a wallet (called when a buy is detected)
+   */
+  async resetSequentialSells(walletAddress: string): Promise<void> {
+    try {
+      const key = `${this.SEQUENTIAL_SELLS_PREFIX}${walletAddress}`;
+      await this.client.del(key);
+      logger.info({ walletAddress }, 'Reset sequential sells counter');
+    } catch (error) {
+      logger.error({ error, walletAddress }, 'Error resetting sequential sells');
+    }
+  }
+
+  /**
+   * Get current sequential sell count for a wallet
+   */
+  async getSequentialSells(walletAddress: string): Promise<number> {
+    try {
+      const key = `${this.SEQUENTIAL_SELLS_PREFIX}${walletAddress}`;
+      const count = await this.client.get(key);
+      return count ? parseInt(count) : 0;
+    } catch (error) {
+      logger.error({ error, walletAddress }, 'Error getting sequential sells');
+      return 0;
     }
   }
 

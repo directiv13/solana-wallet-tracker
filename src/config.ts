@@ -40,6 +40,7 @@ export interface Config {
   telegramThresholdUsd: number;
   priceThresholdUsd: number;
   swapTimeWindowSeconds: number;
+  fiveSellsThresholdUsd: number;
 
   // API
   dexScreenerApiUrl: string;
@@ -103,6 +104,7 @@ export const config: Config = {
   telegramThresholdUsd: getEnvVarAsNumber('TELEGRAM_THRESHOLD_USD', 500),
   priceThresholdUsd: getEnvVarAsNumber('PRICE_THRESHOLD_USD', 300),
   swapTimeWindowSeconds: getEnvVarAsNumber('SWAP_TIME_WINDOW_SECONDS', 3600),
+  fiveSellsThresholdUsd: getEnvVarAsNumber('FIVE_SELLS_THRESHOLD_USD', 300),
 
   dexScreenerApiUrl: getEnvVar(
     'DEX_SCREENER_API_URL',

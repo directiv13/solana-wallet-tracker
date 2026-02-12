@@ -68,6 +68,9 @@ export class NotificationService {
         case NotificationType.PUSHOVER_THRESHOLD_B:
           await this.sendPushoverThresholdB(payload, additionalContext?.cumulativeAmount || 0);
           break;
+        case NotificationType.PUSHOVER_5SELLS:
+          await this.sendPushover5Sells(payload);
+          break;
         default:
           logger.warn({ type }, 'Unknown notification type');
       }
@@ -203,6 +206,43 @@ View: https://solscan.io/tx/${transfer.transactionSignature}
   }
 
   /**
+   * Send Pushover notification for 5 sequential sells
+   */
+  private async sendPushover5Sells(
+    payload: NotificationPayload
+  ): Promise<void> {
+    try {
+      const { transfer, tokenSymbol } = payload;
+      
+      const title = `🚨 5 Sequential Sells Alert`;
+      const message = `
+${tokenSymbol || 'Token'} - 5 sequential sells detected!
+
+Wallet: ${transfer.walletAddress}
+Latest sell: ${transfer.tokenAmount.toLocaleString()}
+${transfer.valueUsd ? `Value: $${transfer.valueUsd.toFixed(2)} USD` : ''}
+
+Threshold: Each sell > $${config.fiveSellsThresholdUsd} USD
+
+View: https://solscan.io/tx/${transfer.transactionSignature}
+      `.trim();
+
+      await this.sendPushoverTo5SellsSubscribers(title, message, 1); // Priority 1 (high)
+
+      logger.info(
+        {
+          walletAddress: transfer.walletAddress,
+          signature: transfer.transactionSignature,
+        },
+        'Pushover 5 sells notification sent'
+      );
+    } catch (error) {
+      logger.error({ error, payload }, 'Error sending Pushover 5 sells notification');
+      throw error;
+    }
+  }
+
+  /**
    * Send Pushover message to all subscribed users
    */
   private async sendPushoverToAllSubscribers(
@@ -230,6 +270,40 @@ View: https://solscan.io/tx/${transfer.transactionSignature}
         logger.info({ userId: sub.userId }, 'Pushover sent to subscriber');
       } catch (error) {
         logger.error({ error, userId: sub.userId }, 'Failed to send Pushover to subscriber');
+      }
+    });
+
+    await Promise.allSettled(promises);
+  }
+
+  /**
+   * Send Pushover message to all 5 sells subscribed users
+   */
+  private async sendPushoverTo5SellsSubscribers(
+    title: string,
+    message: string,
+    priority: number = 0
+  ): Promise<void> {
+    const subscriptions = this.databaseService.getAllPushover5SellsSubscriptions();
+    
+    if (subscriptions.length === 0) {
+      logger.warn('No Pushover 5 Sells subscriptions found, skipping notification');
+      return;
+    }
+
+    logger.info({ count: subscriptions.length }, 'Sending Pushover to all 5 sells subscribers');
+
+    const promises = subscriptions.map(async (sub) => {
+      try {
+        const pushoverClient = new Pushover({
+          user: sub.pushoverUserKey,
+          token: config.pushover.appToken,
+        });
+
+        await this.sendPushoverMessage(pushoverClient, title, message, priority);
+        logger.info({ userId: sub.userId }, 'Pushover 5 sells sent to subscriber');
+      } catch (error) {
+        logger.error({ error, userId: sub.userId }, 'Failed to send Pushover 5 sells to subscriber');
       }
     });
 

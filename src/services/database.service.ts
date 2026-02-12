@@ -10,6 +10,12 @@ export interface PushoverSubscription {
   createdAt: number;
 }
 
+export interface Pushover5SellsSubscription {
+  userId: number;
+  pushoverUserKey: string;
+  createdAt: number;
+}
+
 export interface TrackedWallet {
   address: string;
   addedBy: number;
@@ -38,6 +44,15 @@ export class DatabaseService {
     // Create pushover_subscriptions table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS pushover_subscriptions (
+        user_id INTEGER PRIMARY KEY,
+        pushover_user_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `);
+
+    // Create pushover_5sells_subscriptions table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS pushover_5sells_subscriptions (
         user_id INTEGER PRIMARY KEY,
         pushover_user_key TEXT NOT NULL,
         created_at INTEGER NOT NULL
@@ -103,6 +118,49 @@ export class DatabaseService {
     `);
     
     return stmt.all() as PushoverSubscription[];
+  }
+
+  // Pushover 5 Sells Subscriptions
+  
+  subscribePushover5Sells(userId: number, pushoverUserKey: string): void {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO pushover_5sells_subscriptions 
+      (user_id, pushover_user_key, created_at)
+      VALUES (?, ?, ?)
+    `);
+    
+    stmt.run(userId, pushoverUserKey, Date.now());
+    logger.info({ userId }, 'User subscribed to Pushover 5 Sells notifications');
+  }
+
+  unsubscribePushover5Sells(userId: number): boolean {
+    const stmt = this.db.prepare('DELETE FROM pushover_5sells_subscriptions WHERE user_id = ?');
+    const result = stmt.run(userId);
+    
+    if (result.changes > 0) {
+      logger.info({ userId }, 'User unsubscribed from Pushover 5 Sells notifications');
+      return true;
+    }
+    return false;
+  }
+
+  getPushover5SellsSubscription(userId: number): Pushover5SellsSubscription | null {
+    const stmt = this.db.prepare(`
+      SELECT user_id as userId, pushover_user_key as pushoverUserKey, created_at as createdAt
+      FROM pushover_5sells_subscriptions
+      WHERE user_id = ?
+    `);
+    
+    return stmt.get(userId) as Pushover5SellsSubscription | null;
+  }
+
+  getAllPushover5SellsSubscriptions(): Pushover5SellsSubscription[] {
+    const stmt = this.db.prepare(`
+      SELECT user_id as userId, pushover_user_key as pushoverUserKey, created_at as createdAt
+      FROM pushover_5sells_subscriptions
+    `);
+    
+    return stmt.all() as Pushover5SellsSubscription[];
   }
 
   // Tracked Wallets
