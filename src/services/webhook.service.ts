@@ -1,4 +1,4 @@
-import { HeliusWebhookPayload, ParsedSwap, NotificationType, ParsedTransaction } from '../types';
+import { HeliusWebhookPayload, NotificationType, ParsedTransaction } from '../types';
 import { config } from '../config';
 import { RedisService } from './redis.service';
 import { PriceService } from './price.service';
@@ -57,6 +57,9 @@ export class WebhookService {
     if(!transaction) {
       return transfers;
     }
+
+    if(!this.isWalletTracked(transaction.fromUserAccount) && !this.isWalletTracked(transaction.toUserAccount))
+      return transfers;
 
     // BUY: The token was sent to the user's account
     if(transaction.toUserAccount === payload.feePayer) {
