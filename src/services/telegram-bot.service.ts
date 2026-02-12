@@ -2,6 +2,7 @@ import { Telegraf, Context } from 'telegraf';
 import { config } from '../config';
 import { DatabaseService } from './database.service';
 import { HeliusService } from './helius.service';
+import { RedisService } from './redis.service';
 import pino from 'pino';
 
 const logger = pino({ name: 'telegram-bot-service' });
@@ -10,11 +11,13 @@ export class TelegramBotService {
     private bot: Telegraf;
     private databaseService: DatabaseService;
     private heliusService: HeliusService;
+    private redisService: RedisService;
 
-    constructor(databaseService: DatabaseService, heliusService: HeliusService) {
+    constructor(databaseService: DatabaseService, heliusService: HeliusService, redisService: RedisService) {
         this.bot = new Telegraf(config.telegram.botToken);
         this.databaseService = databaseService;
         this.heliusService = heliusService;
+        this.redisService = redisService;
 
         this.setupCommands();
         logger.info('Telegram bot service initialized');
@@ -373,14 +376,27 @@ export class TelegramBotService {
 
             const walletCount = this.databaseService.getWalletCount();
             const pushoverSubs = this.databaseService.getAllPushoverSubscriptions().length;
+            const pushover5SellsSubs = this.databaseService.getAllPushover5SellsSubscriptions().length;
+
+            // Get cumulative amounts for the tracked token
+            const cumulativeBuy = await this.redisService.getCumulativeAmount(config.targetTokenMint, 'buy');
+            const cumulativeSell = await this.redisService.getCumulativeAmount(config.targetTokenMint, 'sell');
+            const sequentialSells = await this.redisService.getSequentialSells();
+            const timeWindowMinutes = Math.floor(config.swapTimeWindowSeconds / 60);
 
             await ctx.reply(
                 `📊 **Tracker Statistics**\n\n` +
                 `Tracked Wallets: ${walletCount}\n` +
                 `Pushover Subscribers: ${pushoverSubs}\n` +
+                `Pushover 5 Sells Subscribers: ${pushover5SellsSubs}\n` +
                 `Target Token: \`${config.targetTokenMint.substring(0, 8)}...\`\n` +
                 `Price Threshold: $${config.priceThresholdUsd}\n` +
-                `Time Window: ${Math.floor(config.swapTimeWindowSeconds / 60)}m`,
+                `Time Window: ${Math.floor(config.swapTimeWindowSeconds / 60)}m\n\n` +
+                `📊 **Cumulative Amounts (${timeWindowMinutes}m window)**\n` +
+                `🟢 Buys: $${cumulativeBuy.toFixed(2)} USD\n` +
+                `🔴 Sells: $${cumulativeSell.toFixed(2)} USD\n` +
+                `📈 Net: $${(cumulativeBuy - cumulativeSell).toFixed(2)} USD\n` +
+                `🔢 Sequential Sells: ${sequentialSells}/5`,
                 { parse_mode: 'Markdown' }
             );
         } catch (error) {
@@ -406,7 +422,7 @@ export class TelegramBotService {
                 `User ID: ${userId}\n` +
                 `Admin: ${isAdmin ? '✅ Yes' : '❌ No'}\n` +
                 `Pushover: ${subscription ? '✅ Enabled' : '❌ Disabled'}\n` +
-                `Pushover 5 Sells: ${subscription5Sells ? '✅ Enabled' : '❌ Disabled'}`,
+                `Pushover 5 Sells: ${subscription5Sells ? '✅ Enabled' : '❌ Disabled'}\n\n`,
                 { parse_mode: 'Markdown' }
             );
         } catch (error) {
