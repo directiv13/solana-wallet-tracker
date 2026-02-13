@@ -345,7 +345,9 @@ export class TelegramBotService {
                 return;
             }
 
-            const wallets = this.databaseService.getAllWallets();
+            const [skip, limit] = ctx.message && 'text' in ctx.message ? ctx.message.text.split(' ').slice(1).map(Number) : [0, 100];
+
+            const wallets = this.databaseService.getWallets(skip, limit);
 
             if (wallets.length === 0) {
                 await ctx.reply('ℹ️ No wallets are currently being tracked');
@@ -450,7 +452,7 @@ export class TelegramBotService {
                 `*Admin Commands:*\n` +
                 `/add \\<wallet\\> \\- Add wallet to tracking\n` +
                 `/remove \\<wallet\\> \\- Remove wallet from tracking\n` +
-                `/list \\- List all tracked wallets\n` +
+                `/list \\<skip\\> \\<limit\\> \\- List all tracked wallets\n` +
                 `/stats \\- Show tracker statistics\n\n`;
         }
 

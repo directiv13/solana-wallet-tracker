@@ -205,14 +205,15 @@ export class DatabaseService {
     return stmt.get(address) as TrackedWallet | null;
   }
 
-  getAllWallets(): TrackedWallet[] {
+  getWallets(skip: number = 0, limit: number = 100): TrackedWallet[] {
     const stmt = this.db.prepare(`
       SELECT address, added_by as addedBy, added_at as addedAt
       FROM tracked_wallets
       ORDER BY added_at DESC
+       OFFSET ? LIMIT ?
     `);
     
-    return stmt.all() as TrackedWallet[];
+    return stmt.all(skip, limit) as TrackedWallet[];
   }
 
   getWalletAddresses(): string[] {
