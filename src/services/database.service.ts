@@ -22,6 +22,11 @@ export interface TrackedWallet {
   addedAt: number;
 }
 
+export interface User {
+  userId: number;
+  startedAt: number;
+}
+
 export class DatabaseService {
   private db: Database.Database;
 
@@ -65,6 +70,14 @@ export class DatabaseService {
         address TEXT PRIMARY KEY,
         added_by INTEGER NOT NULL,
         added_at INTEGER NOT NULL
+      )
+    `);
+
+    // Create users table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        started_at INTEGER NOT NULL
       )
     `);
 
@@ -210,7 +223,7 @@ export class DatabaseService {
       SELECT address, added_by as addedBy, added_at as addedAt
       FROM tracked_wallets
       ORDER BY added_at DESC
-       OFFSET ? LIMIT ?
+      OFFSET ? LIMIT ?
     `);
     
     return stmt.all(skip, limit) as TrackedWallet[];
@@ -224,6 +237,53 @@ export class DatabaseService {
 
   getWalletCount(): number {
     const stmt = this.db.prepare('SELECT COUNT(*) as count FROM tracked_wallets');
+    const result = stmt.get() as { count: number };
+    return result.count;
+  }
+
+  // Users
+  
+  addUser(userId: number): boolean {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO users (user_id, started_at)
+        VALUES (?, ?)
+      `);
+      
+      stmt.run(userId, Date.now());
+      logger.info({ userId }, 'User added to database');
+      return true;
+    } catch (error: any) {
+      if (error.code === 'SQLITE_CONSTRAINT') {
+        logger.warn({ userId }, 'User already exists');
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  getUser(userId: number): User | null {
+    const stmt = this.db.prepare(`
+      SELECT user_id as userId, started_at as startedAt
+      FROM users 
+      WHERE user_id = ?
+    `);
+    
+    return stmt.get(userId) as User | null;
+  }
+
+  getAllUsers(): User[] {
+    const stmt = this.db.prepare(`
+      SELECT user_id as userId, started_at as startedAt
+      FROM users
+      ORDER BY started_at DESC
+    `);
+    
+    return stmt.all() as User[];
+  }
+
+  getUserCount(): number {
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM users');
     const result = stmt.get() as { count: number };
     return result.count;
   }

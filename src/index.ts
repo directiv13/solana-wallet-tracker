@@ -40,7 +40,7 @@ const webhookService = new WebhookService(
   databaseService
 );
 const telegramBotService = new TelegramBotService(databaseService, heliusService, redisService);
-const schedulerService = new SchedulerService(redisService, notificationService);
+const schedulerService = new SchedulerService(redisService, notificationService, telegramBotService);
 
 // Create Fastify server
 const server = Fastify({

@@ -25,10 +25,14 @@ export class TelegramBotService {
 
     private setupCommands(): void {
         // User commands
+        this.bot.command('start', this.handleStart.bind(this));
         this.bot.command('enable_pushover', this.handleEnablePushover.bind(this));
         this.bot.command('disable_pushover', this.handleDisablePushover.bind(this));
         this.bot.command('enable_pushover_5sells', this.handleEnablePushover5Sells.bind(this));
         this.bot.command('disable_pushover_5sells', this.handleDisablePushover5Sells.bind(this));
+        this.bot.command('cum_30m', this.handleCum30m.bind(this));
+        this.bot.command('cum_1h', this.handleCum1h.bind(this));
+        this.bot.command('cum_4h', this.handleCum4h.bind(this));
         this.bot.command('help', this.handleHelp.bind(this));
         this.bot.command('status', this.handleStatus.bind(this));
 
@@ -47,6 +51,115 @@ export class TelegramBotService {
 
     private isAdmin(userId: number): boolean {
         return config.telegram.adminUserIds.includes(userId);
+    }
+
+    private async handleStart(ctx: Context): Promise<void> {
+        try {
+            const userId = ctx.from?.id;
+            if (!userId) {
+                await ctx.reply('❌ Could not identify user');
+                return;
+            }
+
+            // Add user to database
+            const isNew = this.databaseService.addUser(userId);
+
+            if (isNew) {
+                await ctx.reply(
+                    '👋 Welcome to Solana Wallet Tracker Bot!\n\n' +
+                    '✅ You have been registered and will receive periodic cumulative amount updates.\n\n' +
+                    'Use /help to see all available commands.'
+                );
+                logger.info({ userId }, 'New user registered');
+            } else {
+                await ctx.reply(
+                    '👋 Welcome back to Solana Wallet Tracker Bot!\n\n' +
+                    'You are already registered.\n\n' +
+                    'Use /help to see all available commands.'
+                );
+            }
+        } catch (error) {
+            logger.error({ error }, 'Error handling start command');
+            await ctx.reply('❌ Failed to register user');
+        }
+    }
+
+    private async handleCum30m(ctx: Context): Promise<void> {
+        try {
+            const userId = ctx.from?.id;
+            if (!userId) {
+                await ctx.reply('❌ Could not identify user');
+                return;
+            }
+
+            const { buys, sells } = await this.redisService.getCumulativeAmounts(1800); // 30 minutes in seconds
+
+            await ctx.reply(
+                '📊 **Cumulative Amount (30 minutes)**\n\n' +
+                `🟢 Total Buys: $${buys.toFixed(2)} USD\n` +
+                `🔴 Total Sells: $${sells.toFixed(2)} USD\n\n` +
+                `📈 Net: $${(buys - sells).toFixed(2)} USD\n` +
+                `⏰ ${new Date().toLocaleString()}`,
+                { parse_mode: 'Markdown' }
+            );
+
+            logger.info({ userId, period: '30m' }, 'User requested cumulative amount');
+        } catch (error) {
+            logger.error({ error }, 'Error getting cumulative amount');
+            await ctx.reply('❌ Failed to get cumulative amount');
+        }
+    }
+
+    private async handleCum1h(ctx: Context): Promise<void> {
+        try {
+            const userId = ctx.from?.id;
+            if (!userId) {
+                await ctx.reply('❌ Could not identify user');
+                return;
+            }
+
+            const { buys, sells } = await this.redisService.getCumulativeAmounts(3600); // 1 hour in seconds
+
+            await ctx.reply(
+                '📊 **Cumulative Amount (1 hour)**\n\n' +
+                `🟢 Total Buys: $${buys.toFixed(2)} USD\n` +
+                `🔴 Total Sells: $${sells.toFixed(2)} USD\n\n` +
+                `📈 Net: $${(buys - sells).toFixed(2)} USD\n` +
+                `⏰ ${new Date().toLocaleString()}`,
+                { parse_mode: 'Markdown' }
+            );
+
+            logger.info({ userId, period: '1h' }, 'User requested cumulative amount');
+        } catch (error) {
+            logger.error({ error }, 'Error getting cumulative amount');
+            await ctx.reply('❌ Failed to get cumulative amount');
+        }
+    }
+
+    private async handleCum4h(ctx: Context): Promise<void> {
+        try {
+            const userId = ctx.from?.id;
+            if (!userId) {
+                await ctx.reply('❌ Could not identify user');
+                return;
+            }
+
+            const { buys, sells } = await this.redisService.getCumulativeAmounts(14400); // 4 hours in seconds
+
+            await ctx.reply(
+                '📊 **Cumulative Amount (4 hours)**\n\n' +
+                `🟢 Total Buys: $${buys.toFixed(2)} USD\n` +
+                `🔴 Total Sells: $${sells.toFixed(2)} USD\n\n` +
+                `📈 Net: $${(buys - sells).toFixed(2)} USD\n` +
+                `⏰ ${new Date().toLocaleString()}`,
+                { parse_mode: 'Markdown' }
+            );
+
+            logger.info({ userId, period: '4h' }, 'User requested cumulative amount');
+        } catch (error) {
+            logger.error({ error }, 'Error getting cumulative amount');
+            await ctx.reply('❌ Failed to get cumulative amount');
+        }
     }
 
     private async handleEnablePushover(ctx: Context): Promise<void> {
@@ -419,12 +532,27 @@ export class TelegramBotService {
             const subscription5Sells = this.databaseService.getPushover5SellsSubscription(userId);
             const isAdmin = this.isAdmin(userId);
 
+            // Get cumulative amounts for different periods
+            const cum30m = await this.redisService.getCumulativeAmounts(1800);
+            const cum1h = await this.redisService.getCumulativeAmounts(3600);
+            const cum4h = await this.redisService.getCumulativeAmounts(14400);
+
             await ctx.reply(
                 `👤 **Your Status**\n\n` +
                 `User ID: ${userId}\n` +
                 `Admin: ${isAdmin ? '✅ Yes' : '❌ No'}\n` +
                 `Pushover: ${subscription ? '✅ Enabled' : '❌ Disabled'}\n` +
-                `Pushover 5 Sells: ${subscription5Sells ? '✅ Enabled' : '❌ Disabled'}\n\n`,
+                `Pushover 5 Sells: ${subscription5Sells ? '✅ Enabled' : '❌ Disabled'}\n\n` +
+                `📊 **Cumulative Amounts**\n\n` +
+                `**30 minutes:**\n` +
+                `🟢 Buys: $${cum30m.buys.toFixed(2)} | 🔴 Sells: $${cum30m.sells.toFixed(2)}\n` +
+                `📈 Net: $${(cum30m.buys - cum30m.sells).toFixed(2)}\n\n` +
+                `**1 hour:**\n` +
+                `🟢 Buys: $${cum1h.buys.toFixed(2)} | 🔴 Sells: $${cum1h.sells.toFixed(2)}\n` +
+                `📈 Net: $${(cum1h.buys - cum1h.sells).toFixed(2)}\n\n` +
+                `**4 hours:**\n` +
+                `🟢 Buys: $${cum4h.buys.toFixed(2)} | 🔴 Sells: $${cum4h.sells.toFixed(2)}\n` +
+                `📈 Net: $${(cum4h.buys - cum4h.sells).toFixed(2)}`,
                 { parse_mode: 'Markdown' }
             );
         } catch (error) {
@@ -440,8 +568,12 @@ export class TelegramBotService {
         let helpText =
             `🤖 *Solana Wallet Tracker Bot*\n\n` +
             `*User Commands:*\n` +
+            `/start \\- Register to receive cumulative updates\n` +
             `/help \\- Show this help message\n` +
             `/status \\- Check your subscription status\n` +
+            `/cum\\_30m \\- Get cumulative amount \\(30 min\\)\n` +
+            `/cum\\_1h \\- Get cumulative amount \\(1 hour\\)\n` +
+            `/cum\\_4h \\- Get cumulative amount \\(4 hours\\)\n` +
             `/enable\\_pushover \\<user\\_key\\> \\- Enable Pushover alerts\n` +
             `/disable\\_pushover \\- Disable Pushover alerts\n` +
             `/enable\\_pushover\\_5sells \\<user\\_key\\> \\- Enable Pushover 5 Sells alerts\n` +
@@ -472,6 +604,52 @@ export class TelegramBotService {
     async stop(): Promise<void> {
         this.bot.stop();
         logger.info('Telegram bot stopped');
+    }
+
+    /**
+     * Send cumulative amounts to all registered users
+     * Called periodically by the scheduler
+     */
+    async sendCumulativeAmountsToUsers(periodSeconds: number, periodLabel: string): Promise<void> {
+        try {
+            const users = this.databaseService.getAllUsers();
+            
+            if (users.length === 0) {
+                logger.info('No users to send cumulative amounts to');
+                return;
+            }
+
+            const { buys, sells } = await this.redisService.getCumulativeAmounts(periodSeconds);
+
+            const message =
+                `📊 **Cumulative Amount (${periodLabel})**\n\n` +
+                `🟢 Total Buys: $${buys.toFixed(2)} USD\n` +
+                `🔴 Total Sells: $${sells.toFixed(2)} USD\n\n` +
+                `📈 Net: $${(buys - sells).toFixed(2)} USD\n` +
+                `⏰ ${new Date().toLocaleString()}`;
+
+            logger.info({ userCount: users.length, period: periodLabel }, 'Sending cumulative amounts to users');
+
+            // Send to each user
+            const promises = users.map(async (user) => {
+                try {
+                    await this.bot.telegram.sendMessage(
+                        user.userId,
+                        message,
+                        { parse_mode: 'Markdown' }
+                    );
+                    logger.info({ userId: user.userId, period: periodLabel }, 'Sent cumulative amount to user');
+                } catch (error) {
+                    logger.error({ error, userId: user.userId }, 'Failed to send cumulative amount to user');
+                }
+            });
+
+            await Promise.allSettled(promises);
+
+            logger.info({ userCount: users.length, period: periodLabel }, 'Finished sending cumulative amounts');
+        } catch (error) {
+            logger.error({ error, period: periodLabel }, 'Error sending cumulative amounts to users');
+        }
     }
 
     getBot(): Telegraf {

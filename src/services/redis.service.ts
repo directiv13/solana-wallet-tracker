@@ -189,6 +189,72 @@ export class RedisService {
   }
 
   /**
+   * Get cumulative amounts for all tokens in a specific time period (in seconds)
+   * Returns total buys and sells
+   */
+  async getCumulativeAmounts(periodSeconds: number): Promise<{ buys: number; sells: number }> {
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const windowStart = now - periodSeconds;
+
+      // Get all keys for buy and sell amounts
+      const buyKeys = await this.client.keys(`${this.BUY_AMOUNT_PREFIX}*`);
+      const sellKeys = await this.client.keys(`${this.SELL_AMOUNT_PREFIX}*`);
+
+      let totalBuys = 0;
+      let totalSells = 0;
+
+      // Lua script to sum amounts in window
+      const luaScript = `
+        local key = KEYS[1]
+        local windowStart = tonumber(ARGV[1])
+        
+        -- Remove entries older than window start
+        redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
+        
+        -- Get all amounts in current window and sum them
+        local entries = redis.call('ZRANGEBYSCORE', key, windowStart, '+inf')
+        local total = 0
+        for i, entry in ipairs(entries) do
+          local amount_str = string.match(entry, ':(.+)')
+          if amount_str then
+            total = total + tonumber(amount_str)
+          end
+        end
+        
+        return total
+      `;
+
+      // Sum all buy amounts
+      for (const key of buyKeys) {
+        const amount = await this.client.eval(
+          luaScript,
+          1,
+          key,
+          windowStart.toString()
+        ) as number;
+        totalBuys += amount || 0;
+      }
+
+      // Sum all sell amounts
+      for (const key of sellKeys) {
+        const amount = await this.client.eval(
+          luaScript,
+          1,
+          key,
+          windowStart.toString()
+        ) as number;
+        totalSells += amount || 0;
+      }
+
+      return { buys: totalBuys, sells: totalSells };
+    } catch (error) {
+      logger.error({ error, periodSeconds }, 'Error getting cumulative amounts');
+      return { buys: 0, sells: 0 };
+    }
+  }
+
+  /**
    * Check if notification cooldown is active
    */
   async isInCooldown(key: string): Promise<boolean> {
