@@ -88,26 +88,29 @@ export class RedisService {
       const prefix = type === 'buy' ? this.BUY_AMOUNT_PREFIX : this.SELL_AMOUNT_PREFIX;
       const key = `${prefix}${tokenMint}`;
       const windowStart = timestamp - config.swapTimeWindowSeconds;
+      const cleanupThreshold = timestamp - 14400; // Keep 4 hours of data
 
       // Lua script for atomic operations:
-      // 1. Remove old entries outside the time window
+      // 1. Remove old entries outside 4 hours to conserve memory
       // 2. Add new amount with timestamp as score and amount as member value
-      // 3. Sum all amounts in current window
+      // 3. Sum all amounts in current window (swapTimeWindowSeconds)
+      // 4. Set TTL to keep the key alive while data is being added
       const luaScript = `
         local key = KEYS[1]
         local windowStart = tonumber(ARGV[1])
         local timestamp = tonumber(ARGV[2])
         local amount = tonumber(ARGV[3])
         local ttl = tonumber(ARGV[4])
+        local cleanupThreshold = tonumber(ARGV[5])
         
-        -- Remove entries older than window start
-        redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
+        -- Remove entries older than 4 hours
+        redis.call('ZREMRANGEBYSCORE', key, '-inf', cleanupThreshold)
         
         -- Add new amount (use timestamp:amount as member to ensure uniqueness)
         local member = timestamp .. ':' .. amount
         redis.call('ZADD', key, timestamp, member)
         
-        -- Set expiry on the key
+        -- Set expiry on the key to prevent it from living forever if no new data comes
         redis.call('EXPIRE', key, ttl)
         
         -- Get all amounts in current window and sum them
@@ -130,7 +133,8 @@ export class RedisService {
         windowStart.toString(),
         timestamp.toString(),
         usdAmount.toString(),
-        (14700).toString() // TTL (4 hours + 5 minutes) in seconds 
+        (14700).toString(), // TTL (4 hours + 5 minutes) in seconds 
+        cleanupThreshold.toString()
       ) as number;
 
       return totalAmount;
@@ -154,12 +158,14 @@ export class RedisService {
       const windowStart = now - config.swapTimeWindowSeconds;
 
       // Lua script to sum all amounts in current window
+      // Note: We keep data for 4 hours (14400 seconds) to support longer-term queries
       const luaScript = `
         local key = KEYS[1]
         local windowStart = tonumber(ARGV[1])
+        local cleanupThreshold = tonumber(ARGV[2])
         
-        -- Remove entries older than window start
-        redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
+        -- Remove entries older than 4 hours to conserve memory
+        redis.call('ZREMRANGEBYSCORE', key, '-inf', cleanupThreshold)
         
         -- Get all amounts in current window and sum them
         local entries = redis.call('ZRANGEBYSCORE', key, windowStart, '+inf')
@@ -174,11 +180,14 @@ export class RedisService {
         return total
       `;
 
+      const cleanupThreshold = now - 14400; // Keep 4 hours of data
+
       const totalAmount = await this.client.eval(
         luaScript,
         1,
         key,
-        windowStart.toString()
+        windowStart.toString(),
+        cleanupThreshold.toString()
       ) as number;
 
       return totalAmount || 0;
@@ -196,6 +205,7 @@ export class RedisService {
     try {
       const now = Math.floor(Date.now() / 1000);
       const windowStart = now - periodSeconds;
+      const cleanupThreshold = now - 14400; // Keep 4 hours of data
 
       // Get all keys for buy and sell amounts
       const buyKeys = await this.client.keys(`${this.BUY_AMOUNT_PREFIX}*`);
@@ -205,12 +215,14 @@ export class RedisService {
       let totalSells = 0;
 
       // Lua script to sum amounts in window
+      // Note: We keep data for 4 hours to support longer-term queries
       const luaScript = `
         local key = KEYS[1]
         local windowStart = tonumber(ARGV[1])
+        local cleanupThreshold = tonumber(ARGV[2])
         
-        -- Remove entries older than window start
-        redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
+        -- Remove entries older than 4 hours to conserve memory
+        redis.call('ZREMRANGEBYSCORE', key, '-inf', cleanupThreshold)
         
         -- Get all amounts in current window and sum them
         local entries = redis.call('ZRANGEBYSCORE', key, windowStart, '+inf')
@@ -231,7 +243,8 @@ export class RedisService {
           luaScript,
           1,
           key,
-          windowStart.toString()
+          windowStart.toString(),
+          cleanupThreshold.toString()
         ) as number;
         totalBuys += amount || 0;
       }
@@ -242,7 +255,8 @@ export class RedisService {
           luaScript,
           1,
           key,
-          windowStart.toString()
+          windowStart.toString(),
+          cleanupThreshold.toString()
         ) as number;
         totalSells += amount || 0;
       }
