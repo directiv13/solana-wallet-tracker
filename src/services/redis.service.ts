@@ -130,7 +130,7 @@ export class RedisService {
         windowStart.toString(),
         timestamp.toString(),
         usdAmount.toString(),
-        (config.swapTimeWindowSeconds + 300).toString()
+        (14700).toString() // TTL (4 hours + 5 minutes) in seconds 
       ) as number;
 
       return totalAmount;
