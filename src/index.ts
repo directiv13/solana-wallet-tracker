@@ -70,7 +70,7 @@ server.get('/health', async (_request, reply) => {
     config: {
       targetTokenMint: config.targetTokenMint,
       trackedWalletsCount: databaseService.getWalletCount(),
-      pushoverSubscribersCount: databaseService.getAllPushoverSubscriptions().length,
+      usersWithPushover: databaseService.getUsersWithPushoverKey().length,
       priceThresholdUsd: config.priceThresholdUsd,
       swapTimeWindowSeconds: config.swapTimeWindowSeconds,
     },
@@ -331,8 +331,8 @@ async function start() {
     logger.info({
       targetTokenMint: config.targetTokenMint,
       priceThresholdUsd: config.priceThresholdUsd,
-      swapTimeWindowSeconds: config.swapTimeWindowSeconds,
       adminUserIds: config.telegram.adminUserIds,
+      swapTimeWindowSeconds: config.swapTimeWindowSeconds,
     }, 'Configuration loaded');
 
     // Check Redis connection

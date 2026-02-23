@@ -31,10 +31,9 @@ HELIUS_API_KEY=your_key
 HELIUS_WEBHOOK_URL=https://your-domain.com/webhook
 TELEGRAM_BOT_TOKEN=your_token
 TELEGRAM_CHAT_ID=your_id
-PUSHOVER_USER_KEY=your_key
+TELEGRAM_ADMIN_USER_IDS=your_user_id
 PUSHOVER_APP_TOKEN=your_token
 TARGET_TOKEN_MINT=your_token_mint
-TRACKED_WALLETS=wallet1,wallet2
 EOF
 ```
 

@@ -10,7 +10,7 @@ export class RedisService {
   private readonly BUY_AMOUNT_PREFIX = 'buy_amount:';
   private readonly SELL_AMOUNT_PREFIX = 'sell_amount:';
   private readonly COOLDOWN_PREFIX = 'cooldown:';
-  private readonly SEQUENTIAL_SELLS_PREFIX = 'sequential_sells:';
+  private readonly PREV_CUMULATIVE_PREFIX = 'prev_cumulative:';
 
   constructor() {
     this.client = new Redis({
@@ -295,6 +295,45 @@ export class RedisService {
   }
 
   /**
+   * Get previous cumulative amount for direction change detection
+   */
+  async getPreviousCumulativeAmount(periodSeconds: number): Promise<number | null> {
+    try {
+      const key = `${this.PREV_CUMULATIVE_PREFIX}${periodSeconds}`;
+      const cached = await this.client.get(key);
+      
+      if (!cached) {
+        return null;
+      }
+
+      const amount = parseFloat(cached);
+      if (isNaN(amount)) {
+        logger.warn({ periodSeconds }, 'Invalid previous cumulative amount format');
+        return null;
+      }
+
+      return amount;
+    } catch (error) {
+      logger.error({ error, periodSeconds }, 'Error getting previous cumulative amount');
+      return null;
+    }
+  }
+
+  /**
+   * Set previous cumulative amount for direction change detection
+   * TTL set to 2x the period to ensure it persists between checks
+   */
+  async setPreviousCumulativeAmount(periodSeconds: number, amount: number): Promise<void> {
+    try {
+      const key = `${this.PREV_CUMULATIVE_PREFIX}${periodSeconds}`;
+      const ttl = periodSeconds * 2; // 2x the period
+      await this.client.setex(key, ttl, amount.toString());
+    } catch (error) {
+      logger.error({ error, periodSeconds, amount }, 'Error setting previous cumulative amount');
+    }
+  }
+
+  /**
    * Health check for Redis connection
    */
   async healthCheck(): Promise<boolean> {
@@ -304,51 +343,6 @@ export class RedisService {
     } catch (error) {
       logger.error({ error }, 'Redis health check failed');
       return false;
-    }
-  }
-
-  /**
-   * Increment sequential sell counter globally (across all wallets)
-   * Returns the new count
-   */
-  async incrementSequentialSells(): Promise<number> {
-    try {
-      const key = `${this.SEQUENTIAL_SELLS_PREFIX}global`;
-      const count = await this.client.incr(key);
-      // Set expiry for 24 hours
-      await this.client.expire(key, 86400);
-      logger.info({ count }, 'Incremented sequential sells counter');
-      return count;
-    } catch (error) {
-      logger.error({ error }, 'Error incrementing sequential sells');
-      return 0;
-    }
-  }
-
-  /**
-   * Reset sequential sell counter globally (called when a buy is detected)
-   */
-  async resetSequentialSells(): Promise<void> {
-    try {
-      const key = `${this.SEQUENTIAL_SELLS_PREFIX}global`;
-      await this.client.del(key);
-      logger.info('Reset sequential sells counter');
-    } catch (error) {
-      logger.error({ error }, 'Error resetting sequential sells');
-    }
-  }
-
-  /**
-   * Get current sequential sell count globally
-   */
-  async getSequentialSells(): Promise<number> {
-    try {
-      const key = `${this.SEQUENTIAL_SELLS_PREFIX}global`;
-      const count = await this.client.get(key);
-      return count ? parseInt(count) : 0;
-    } catch (error) {
-      logger.error({ error }, 'Error getting sequential sells');
-      return 0;
     }
   }
 

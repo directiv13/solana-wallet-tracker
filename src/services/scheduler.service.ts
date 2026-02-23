@@ -11,7 +11,7 @@ export class SchedulerService {
   constructor(
     private redisService: RedisService,
     private notificationService: NotificationService,
-    private telegramBotService: TelegramBotService
+    private telegramBotService: TelegramBotService,
   ) {}
 
   /**
@@ -25,9 +25,11 @@ export class SchedulerService {
     });
 
     // Send 30 minutes cumulative to users every 30 minutes
+    // Send Pushover cumulative amount direction change notification
     cron.schedule('*/30 * * * *', async () => {
       logger.info('Running 30-minute cumulative notification job');
       await this.telegramBotService.sendCumulativeAmountsToUsers(1800, '30 minutes');
+      await this.checkCumulativeDirectionChange(1800, '30 minutes');
     });
 
     // Send 1 hour cumulative to users every hour
@@ -68,6 +70,57 @@ export class SchedulerService {
       );
     } catch (error) {
       logger.error({ error }, 'Error in hourly summary job');
+    }
+  }
+
+  /**
+   * Check cumulative amount direction change and send Pushover notification
+   */
+  private async checkCumulativeDirectionChange(
+    periodSeconds: number,
+    periodLabel: string
+  ): Promise<void> {
+    try {
+      // Get current cumulative amounts
+      const { buys, sells } = await this.redisService.getCumulativeAmounts(periodSeconds);
+      const currentCumulative = buys - sells;
+
+      // Get previous cumulative amount
+      const previousCumulative = await this.redisService.getPreviousCumulativeAmount(periodSeconds);
+
+      // Store current as previous for next check
+      await this.redisService.setPreviousCumulativeAmount(periodSeconds, currentCumulative);
+
+      // If no previous data, skip notification (first run)
+      if (previousCumulative === null) {
+        logger.info({ periodSeconds, currentCumulative }, 'No previous cumulative data, skipping direction check');
+        return;
+      }
+
+      // Check for direction change
+      const directionChanged = 
+        (previousCumulative >= 0 && currentCumulative < 0) ||  // Went from positive/zero to negative
+        (previousCumulative < 0 && currentCumulative >= 0);    // Went from negative to positive/zero
+
+      if (directionChanged) {
+        logger.info(
+          { previousCumulative, currentCumulative, periodLabel },
+          'Cumulative direction changed, sending notifications'
+        );
+
+        await this.notificationService.sendCumulativeDirectionChange(
+          previousCumulative,
+          currentCumulative,
+          periodLabel
+        );
+      } else {
+        logger.debug(
+          { previousCumulative, currentCumulative, periodLabel },
+          'No direction change detected'
+        );
+      }
+    } catch (error) {
+      logger.error({ error, periodSeconds, periodLabel }, 'Error checking cumulative direction change');
     }
   }
 }

@@ -28,8 +28,8 @@ export class TelegramBotService {
         this.bot.command('start', this.handleStart.bind(this));
         this.bot.command('enable_pushover', this.handleEnablePushover.bind(this));
         this.bot.command('disable_pushover', this.handleDisablePushover.bind(this));
-        this.bot.command('enable_pushover_5sells', this.handleEnablePushover5Sells.bind(this));
-        this.bot.command('disable_pushover_5sells', this.handleDisablePushover5Sells.bind(this));
+        this.bot.command('subscribe', this.handleSubscribe.bind(this));
+        this.bot.command('unsubscribe', this.handleUnsubscribe.bind(this));
         this.bot.command('cum_30m', this.handleCum30m.bind(this));
         this.bot.command('cum_1h', this.handleCum1h.bind(this));
         this.bot.command('cum_4h', this.handleCum4h.bind(this));
@@ -193,19 +193,20 @@ export class TelegramBotService {
                 return;
             }
 
-            this.databaseService.subscribePushover(userId, userKey);
+            this.databaseService.setPushoverUserKey(userId, userKey);
 
             await ctx.reply(
-                '✅ Pushover notifications enabled!\n\n' +
-                'You will now receive high-priority alerts for:\n' +
-                `• Single swaps over $${config.priceThresholdUsd}\n` +
-                `• Cumulative buys/sells over $${config.priceThresholdUsd} in ${Math.floor(config.swapTimeWindowSeconds / 60)} minutes`
+                '✅ Pushover user key saved!\n\n' +
+                'You can now subscribe to specific notification types using:\n' +
+                '/subscribe big_sell - High-value sell alerts\n' +
+                '/subscribe change_direction - Direction change alerts\n\n' +
+                'Use /status to check your subscriptions.'
             );
 
-            logger.info({ userId }, 'User enabled Pushover notifications');
+            logger.info({ userId }, 'User enabled Pushover');
         } catch (error) {
             logger.error({ error }, 'Error enabling Pushover');
-            await ctx.reply('❌ Failed to enable Pushover notifications');
+            await ctx.reply('❌ Failed to enable Pushover');
         }
     }
 
@@ -217,21 +218,21 @@ export class TelegramBotService {
                 return;
             }
 
-            const removed = this.databaseService.unsubscribePushover(userId);
+            const removed = this.databaseService.removePushoverUserKey(userId);
 
             if (removed) {
-                await ctx.reply('✅ Pushover notifications disabled');
-                logger.info({ userId }, 'User disabled Pushover notifications');
+                await ctx.reply('✅ Pushover user key removed. All subscriptions have been disabled.');
+                logger.info({ userId }, 'User disabled Pushover');
             } else {
-                await ctx.reply('ℹ️ You were not subscribed to Pushover notifications');
+                await ctx.reply('ℹ️ You did not have a Pushover key set');
             }
         } catch (error) {
             logger.error({ error }, 'Error disabling Pushover');
-            await ctx.reply('❌ Failed to disable Pushover notifications');
+            await ctx.reply('❌ Failed to disable Pushover');
         }
     }
 
-    private async handleEnablePushover5Sells(ctx: Context): Promise<void> {
+    private async handleSubscribe(ctx: Context): Promise<void> {
         try {
             const userId = ctx.from?.id;
             if (!userId) {
@@ -239,47 +240,68 @@ export class TelegramBotService {
                 return;
             }
 
-            // Parse command: /enable_pushover_5sells <user_key>
+            // Check if user has Pushover key set
+            const user = this.databaseService.getUser(userId);
+            if (!user || !user.pushoverUserKey) {
+                await ctx.reply(
+                    '❌ You need to set up Pushover first!\n\n' +
+                    'Use: /enable_pushover <user_key>\n\n' +
+                    'Get your key from: https://pushover.net/'
+                );
+                return;
+            }
+
+            // Parse command: /subscribe <key>
             const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
             const parts = text.split(' ').filter(p => p.length > 0);
 
             if (parts.length !== 2) {
                 await ctx.reply(
                     '❌ Invalid format!\n\n' +
-                    'Usage: /enable_pushover_5sells <user_key>\n\n' +
-                    'Example:\n' +
-                    '/enable_pushover_5sells uQiRzpo4DXghDmr9QzzfQu27jqWCH\n\n' +
-                    'Get your user key from: https://pushover.net/'
+                    'Usage: /subscribe <key>\n\n' +
+                    'Available keys:\n' +
+                    '• single_swap - High-value swap alerts\n' +
+                    '• change_direction - Cumulative amount direction change alerts\n\n' +
+                    'Example: /subscribe single_swap'
                 );
                 return;
             }
 
-            const [, userKey] = parts;
+            const [, key] = parts;
 
-            // Validate key (basic check)
-            if (userKey.length < 20) {
-                await ctx.reply('❌ Invalid Pushover user key. Key should be at least 20 characters.');
+            // Validate key
+            const validKeys = ['single_swap', 'change_direction'];
+            if (!validKeys.includes(key)) {
+                await ctx.reply(
+                    '❌ Invalid subscription key!\n\n' +
+                    'Available keys:\n' +
+                    '• single_swap - High-value swap alerts\n' +
+                    '• change_direction - Cumulative amount direction change alerts'
+                );
                 return;
             }
 
-            this.databaseService.subscribePushover5Sells(userId, userKey);
+            this.databaseService.subscribePushover(userId, key);
+
+            const keyDescriptions: { [key: string]: string } = {
+                'single_swap': 'High-value swap alerts',
+                'change_direction': 'Cumulative amount direction change alerts'
+            };
 
             await ctx.reply(
-                '✅ Pushover 5 Sells notifications enabled!\n\n' +
-                'You will now receive alerts when:\n' +
-                `• 5 sequential sells are detected (each over $${config.fiveSellsThresholdUsd})\n` +
-                '• No buys occur between the sells\n\n' +
-                'Note: This is a separate subscription from regular Pushover notifications.'
+                `✅ Subscribed to: ${keyDescriptions[key]}\n\n` +
+                'Use /status to see all your subscriptions.\n' +
+                'Use /unsubscribe <key> to unsubscribe.'
             );
 
-            logger.info({ userId }, 'User enabled Pushover 5 Sells notifications');
+            logger.info({ userId, key }, 'User subscribed to notification');
         } catch (error) {
-            logger.error({ error }, 'Error enabling Pushover 5 Sells');
-            await ctx.reply('❌ Failed to enable Pushover 5 Sells notifications');
+            logger.error({ error }, 'Error subscribing');
+            await ctx.reply('❌ Failed to subscribe');
         }
     }
 
-    private async handleDisablePushover5Sells(ctx: Context): Promise<void> {
+    private async handleUnsubscribe(ctx: Context): Promise<void> {
         try {
             const userId = ctx.from?.id;
             if (!userId) {
@@ -287,17 +309,33 @@ export class TelegramBotService {
                 return;
             }
 
-            const removed = this.databaseService.unsubscribePushover5Sells(userId);
+            // Parse command: /unsubscribe <key>
+            const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+            const parts = text.split(' ').filter(p => p.length > 0);
+
+            if (parts.length !== 2) {
+                await ctx.reply(
+                    '❌ Invalid format!\n\n' +
+                    'Usage: /unsubscribe <key>\n\n' +
+                    'Example: /unsubscribe single_swap\n\n' +
+                    'Use /status to see your current subscriptions.'
+                );
+                return;
+            }
+
+            const [, key] = parts;
+
+            const removed = this.databaseService.unsubscribePushover(userId, key);
 
             if (removed) {
-                await ctx.reply('✅ Pushover 5 Sells notifications disabled');
-                logger.info({ userId }, 'User disabled Pushover 5 Sells notifications');
+                await ctx.reply(`✅ Unsubscribed from: ${key}`);
+                logger.info({ userId, key }, 'User unsubscribed from notification');
             } else {
-                await ctx.reply('ℹ️ You were not subscribed to Pushover 5 Sells notifications');
+                await ctx.reply(`ℹ️ You were not subscribed to: ${key}`);
             }
         } catch (error) {
-            logger.error({ error }, 'Error disabling Pushover 5 Sells');
-            await ctx.reply('❌ Failed to disable Pushover 5 Sells notifications');
+            logger.error({ error }, 'Error unsubscribing');
+            await ctx.reply('❌ Failed to unsubscribe');
         }
     }
 
@@ -490,28 +528,28 @@ export class TelegramBotService {
             }
 
             const walletCount = this.databaseService.getWalletCount();
-            const pushoverSubs = this.databaseService.getAllPushoverSubscriptions().length;
-            const pushover5SellsSubs = this.databaseService.getAllPushover5SellsSubscriptions().length;
+            const usersWithPushover = this.databaseService.getUsersWithPushoverKey().length;
+            const singleSwapSubs = this.databaseService.getAllPushoverSubscriptions('single_swap').length;
+            const changeDirectionSubs = this.databaseService.getAllPushoverSubscriptions('change_direction').length;
 
             // Get cumulative amounts for the tracked token
             const cumulativeBuy = await this.redisService.getCumulativeAmount(config.targetTokenMint, 'buy');
             const cumulativeSell = await this.redisService.getCumulativeAmount(config.targetTokenMint, 'sell');
-            const sequentialSells = await this.redisService.getSequentialSells();
             const timeWindowMinutes = Math.floor(config.swapTimeWindowSeconds / 60);
 
             await ctx.reply(
                 `📊 **Tracker Statistics**\n\n` +
                 `Tracked Wallets: ${walletCount}\n` +
-                `Pushover Subscribers: ${pushoverSubs}\n` +
-                `Pushover 5 Sells Subscribers: ${pushover5SellsSubs}\n` +
+                `Users with Pushover: ${usersWithPushover}\n` +
+                `Single Swap Subscriptions: ${singleSwapSubs}\n` +
+                `Change Direction Subscriptions: ${changeDirectionSubs}\n` +
                 `Target Token: \`${config.targetTokenMint.substring(0, 8)}...\`\n` +
                 `Price Threshold: $${config.priceThresholdUsd}\n` +
-                `Time Window: ${Math.floor(config.swapTimeWindowSeconds / 60)}m\n\n` +
+                `Time Window: ${timeWindowMinutes}m\n\n` +
                 `📊 **Cumulative Amounts (${timeWindowMinutes}m window)**\n` +
                 `🟢 Buys: $${cumulativeBuy.toFixed(2)} USD\n` +
                 `🔴 Sells: $${cumulativeSell.toFixed(2)} USD\n` +
-                `📈 Net: $${(cumulativeBuy - cumulativeSell).toFixed(2)} USD\n` +
-                `🔢 Sequential Sells: ${sequentialSells}/5`,
+                `📈 Net: $${(cumulativeBuy - cumulativeSell).toFixed(2)} USD\n`,
                 { parse_mode: 'Markdown' }
             );
         } catch (error) {
@@ -528,8 +566,8 @@ export class TelegramBotService {
                 return;
             }
 
-            const subscription = this.databaseService.getPushoverSubscription(userId);
-            const subscription5Sells = this.databaseService.getPushover5SellsSubscription(userId);
+            const user = this.databaseService.getUser(userId);
+            const subscriptions = this.databaseService.getPushoverSubscriptions(userId);
             const isAdmin = this.isAdmin(userId);
 
             // Get cumulative amounts for different periods
@@ -537,12 +575,17 @@ export class TelegramBotService {
             const cum1h = await this.redisService.getCumulativeAmounts(3600);
             const cum4h = await this.redisService.getCumulativeAmounts(14400);
 
+            const pushoverStatus = user?.pushoverUserKey ? '✅ Enabled' : '❌ Disabled';
+            const subscriptionsList = subscriptions.length > 0 
+                ? subscriptions.map(s => `  • ${s.key}`).join('\n')
+                : '  None';
+
             await ctx.reply(
                 `👤 **Your Status**\n\n` +
                 `User ID: ${userId}\n` +
                 `Admin: ${isAdmin ? '✅ Yes' : '❌ No'}\n` +
-                `Pushover: ${subscription ? '✅ Enabled' : '❌ Disabled'}\n` +
-                `Pushover 5 Sells: ${subscription5Sells ? '✅ Enabled' : '❌ Disabled'}\n\n` +
+                `Pushover: ${pushoverStatus}\n` +
+                `Subscriptions:\n${subscriptionsList}\n\n` +
                 `📊 **Cumulative Amounts**\n\n` +
                 `**30 minutes:**\n` +
                 `🟢 Buys: $${cum30m.buys.toFixed(2)} | 🔴 Sells: $${cum30m.sells.toFixed(2)}\n` +
@@ -576,8 +619,11 @@ export class TelegramBotService {
             `/cum\\_4h \\- Get cumulative amount \\(4 hours\\)\n` +
             `/enable\\_pushover \\<user\\_key\\> \\- Enable Pushover alerts\n` +
             `/disable\\_pushover \\- Disable Pushover alerts\n` +
-            `/enable\\_pushover\\_5sells \\<user\\_key\\> \\- Enable Pushover 5 Sells alerts\n` +
-            `/disable\\_pushover\\_5sells \\- Disable Pushover 5 Sells alerts\n\n`;
+            `/subscribe \\<key\\> \\- Subscribe to notification type\n` +
+            `/unsubscribe \\<key\\> \\- Unsubscribe from notification type\n\n` +
+            `*Available Subscription Keys:*\n` +
+            `• single\\_swap \\- High\\-value swap alerts\n` +
+            `• change\\_direction \\- Cumulative amount direction change alerts\n\n`;
 
         if (isAdmin) {
             helpText +=
@@ -590,8 +636,9 @@ export class TelegramBotService {
 
         helpText +=
             `*About Pushover:*\n` +
-            `Get your keys from: https://pushover\\.net/\n` +
-            `You'll receive alerts for high\\-value swaps and activity surges\\.`;
+            `1\\. Get your user key from: https://pushover\\.net/\n` +
+            `2\\. Enable Pushover: /enable\\_pushover \\<user\\_key\\>\n` +
+            `3\\. Subscribe to notifications: /subscribe \\<key\\>`;
 
         await ctx.reply(helpText, { parse_mode: 'MarkdownV2' });
     }

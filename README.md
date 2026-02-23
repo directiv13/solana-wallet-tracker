@@ -8,8 +8,9 @@ A high-performance Node.js TypeScript application that monitors Solana transacti
 - **Multi-wallet Tracking**: Monitor up to 500 wallet addresses simultaneously
 - **Smart Notifications**:
   - 📱 **Telegram**: Instant notifications for every buy/sell of tracked tokens
-  - 🔔 **Pushover (Threshold A)**: High-value alerts for swaps exceeding $300 USD
-  - ⚡ **Pushover (Threshold B)**: Activity surge alerts for 10+ swaps within 1 hour
+  - 🔔 **Pushover Subscriptions**: User-based subscription system for customized alerts
+    - **big_sell**: High-value sell alerts (single swaps > $300 USD, 5 sequential sells)
+    - **change_direction**: Direction change alerts (volume surges indicating trend changes)
 - **Price Intelligence**: Automatic USD valuation using DEX Screener API with Redis caching
 - **Sliding Window Analytics**: Atomic Redis-based event counting for accurate activity detection
 - **High Performance**: Built on Fastify for maximum throughput and minimal latency
@@ -144,7 +145,8 @@ TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 TELEGRAM_CHAT_ID=-1001234567890
 
 # Pushover Configuration
-PUSHOVER_USER_KEY=uQiRzpo4DXghDmr9QzzfQu27cmVRsG
+# Create an application at https://pushover.net/ to get your APP_TOKEN
+# Users will subscribe with their own user keys via /enable_pushover command
 PUSHOVER_APP_TOKEN=azGDORePK8gMaC0QOYAMyEEuzJnyUi
 
 # Solana Configuration
@@ -173,8 +175,11 @@ PRICE_CACHE_TTL_SECONDS=60
 #### Pushover Setup
 
 1. Sign up at [pushover.net](https://pushover.net/)
-2. Create an application to get your APP_TOKEN
-3. Find your USER_KEY in your account settings
+2. Create an application to get your APP_TOKEN for the .env file
+3. Users subscribe individually via Telegram bot commands:
+   - `/enable_pushover <user_key>` - Set up Pushover with your user key
+   - `/subscribe <key>` - Subscribe to specific notification types
+   - Available keys: `big_sell`, `change_direction`
 
 #### Tracked Wallets
 
@@ -334,19 +339,23 @@ ngrok http 3000
 ⏰ 1/28/2026, 12:00:00 PM
 ```
 
-### Pushover Threshold A (High Value)
+### Pushover: Big Sell Alerts
 
-**Trigger:** Single swap value exceeds `PRICE_THRESHOLD_USD` (default: $300)
+**Subscription Key:** `big_sell`
+
+**Triggers:**
+1. Single sell value exceeds `PRICE_THRESHOLD_USD` (default: $300)
+2. 5 sequential sells detected (each over `FIVE_SELLS_THRESHOLD_USD`)
 
 **Priority:** High (Priority 1)
 
 **Sound:** Cash register
 
-**Notification:**
+**Notification Examples:**
 ```
-🚨 Large BUY Alert
+🚨 Large SELL Alert
 
-USDC buy
+USDC sell
 Wallet: 7xKXt...gAsU
 Value: $1,234.56 USD
 Amount: 1,234.56
@@ -354,9 +363,25 @@ Amount: 1,234.56
 View: https://solscan.io/tx/...
 ```
 
-### Pushover Threshold B (High Activity)
+```
+🚨 5 Sequential Sells Alert
 
-**Trigger:** `SWAP_COUNT_THRESHOLD` swaps (default: 10) within `SWAP_TIME_WINDOW_SECONDS` (default: 3600s/1h)
+USDC - 5 sequential sells detected!
+
+Wallet: 7xKXt...gAsU
+Latest sell: 1,234.56
+Value: $789.00 USD
+
+Threshold: Each sell > $100.00 USD
+
+View: https://solscan.io/tx/...
+```
+
+### Pushover: Change Direction Alerts
+
+**Subscription Key:** `change_direction`
+
+**Trigger:** Volume surge indicating potential trend change - cumulative buy/sell amounts exceeding threshold within time window
 
 **Cooldown:** 5 minutes between notifications
 
@@ -364,17 +389,77 @@ View: https://solscan.io/tx/...
 
 **Notification:**
 ```
-⚡ High Activity Alert
+⚡ Volume Alert: SELL
 
-USDC trading surge detected!
-12 swaps in last hour
+USDC sell volume surge!
+Cumulative sells: $1,234.56 USD
+Time window: 60 minutes
 
-Latest swap:
-Type: BUY
+Latest sell:
 Wallet: 7xKXt...gAsU
+Amount: 1,234.56
 Value: $45.67 USD
 
 View: https://solscan.io/tx/...
+```
+
+## 🤖 Telegram Bot Commands
+
+### User Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/start` | Register to receive cumulative updates | `/start` |
+| `/help` | Show all available commands | `/help` |
+| `/status` | Check your subscription status and view stats | `/status` |
+| `/cum_30m` | Get cumulative amounts for last 30 minutes | `/cum_30m` |
+| `/cum_1h` | Get cumulative amounts for last hour | `/cum_1h` |
+| `/cum_4h` | Get cumulative amounts for last 4 hours | `/cum_4h` |
+| `/enable_pushover <user_key>` | Enable Pushover notifications with your user key | `/enable_pushover uQiRzpo4DXgh...` |
+| `/disable_pushover` | Disable Pushover notifications | `/disable_pushover` |
+| `/subscribe <key>` | Subscribe to specific notification type | `/subscribe big_sell` |
+| `/unsubscribe <key>` | Unsubscribe from notification type | `/unsubscribe big_sell` |
+
+### Admin Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/add <wallet>` | Add wallet(s) to tracking | `/add 7xKXtg2CW87d97TX...` |
+| `/remove <wallet>` | Remove wallet from tracking | `/remove 7xKXtg2CW87d97TX...` |
+| `/list <skip> <limit>` | List tracked wallets | `/list 0 10` |
+| `/stats` | Show tracker statistics | `/stats` |
+
+### Subscription Keys
+
+| Key | Description | Notifications |
+|-----|-------------|---------------|
+| `big_sell` | High-value sell alerts | Single sells > $300, 5 sequential sells pattern |
+| `change_direction` | Direction change alerts | Volume surges indicating potential trend changes |
+
+### Database Schema
+
+```sql
+-- Users table
+CREATE TABLE users (
+    user_id INTEGER PRIMARY KEY,
+    pushover_user_key TEXT,
+    started_at INTEGER NOT NULL
+);
+
+-- Pushover subscriptions table
+CREATE TABLE pushover_subscriptions (
+    user_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, key)
+);
+
+-- Tracked wallets table
+CREATE TABLE tracked_wallets (
+    address TEXT PRIMARY KEY,
+    added_by INTEGER NOT NULL,
+    added_at INTEGER NOT NULL
+);
 ```
 
 ## 🔧 Development

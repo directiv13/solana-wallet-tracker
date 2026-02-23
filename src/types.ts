@@ -158,7 +158,6 @@ export interface NotificationPayload {
 
 export enum NotificationType {
   TELEGRAM_ALL = 'telegram_all',
-  PUSHOVER_THRESHOLD_A = 'pushover_threshold_a',
-  PUSHOVER_THRESHOLD_B = 'pushover_threshold_b',
-  PUSHOVER_5SELLS = 'pushover_5sells',
+  PUSHOVER_SINGLE_SWAP = 'pushover_single_swap',
+  PUSHOVER_CHANGE_DIRECTION = 'pushover_change_direction',
 }

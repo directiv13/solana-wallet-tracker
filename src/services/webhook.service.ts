@@ -107,49 +107,6 @@ export class WebhookService {
         transfer.valueUsd = usdValue;
       }
 
-      // Track sequential sells for 5sells notification (global across all wallets)
-      if (transfer.type === 'sell' && usdValue !== null && usdValue >= config.fiveSellsThresholdUsd) {
-        // Increment sequential sell counter globally
-        const sequentialSellCount = await this.redisService.incrementSequentialSells();
-
-        logger.info(
-          {
-            walletAddress: transfer.walletAddress,
-            sequentialSellCount,
-            valueUsd: usdValue,
-          },
-          'Sequential sell detected (global counter)'
-        );
-
-        // Check if we reached 5 sequential sells
-        if (sequentialSellCount === 5) {
-          logger.info(
-            {
-              walletAddress: transfer.walletAddress,
-              signature: transfer.transactionSignature,
-            },
-            '5 sequential sells detected globally - triggering notifications'
-          );
-
-          // Send notification to 5sells subscribers and Telegram
-          await this.notificationService.sendNotification(
-            NotificationType.PUSHOVER_5SELLS,
-            { transfer }
-          );
-        }
-      } else if (transfer.type === 'buy') {
-        // Reset sequential sell counter on buy (global)
-        await this.redisService.resetSequentialSells();
-
-        logger.info(
-          {
-            walletAddress: transfer.walletAddress,
-            valueUsd: usdValue,
-          },
-          'Buy detected - reset sequential sells counter (global)'
-        );
-      }
-
       if (usdValue !== null && usdValue >= config.telegramThresholdUsd) {
         logger.info(
           {
@@ -179,7 +136,7 @@ export class WebhookService {
         );
 
         await this.notificationService.sendNotification(
-          NotificationType.PUSHOVER_THRESHOLD_A,
+          NotificationType.PUSHOVER_SINGLE_SWAP,
           { transfer }
         );
       }
@@ -202,39 +159,6 @@ export class WebhookService {
           },
           'Current cumulative amount in window'
         );
-
-        if (cumulativeAmount >= config.priceThresholdUsd) {
-          // Check cooldown to prevent spam
-          const cooldownKey = `${transfer.tokenMint}:${transfer.type}:threshold_b`;
-          const inCooldown = await this.redisService.isInCooldown(cooldownKey);
-
-          if (!inCooldown) {
-            logger.info(
-              {
-                signature: transfer.transactionSignature,
-                type: transfer.type,
-                cumulativeAmount,
-                threshold: config.priceThresholdUsd,
-              },
-              'Threshold B triggered: Cumulative amount meets threshold'
-            );
-
-            // Send both Pushover for threshold B
-            await this.notificationService.sendNotification(
-              NotificationType.PUSHOVER_THRESHOLD_B,
-              { transfer },
-              { cumulativeAmount }
-            );
-
-            // Set cooldown for the time window duration
-            await this.redisService.setCooldown(cooldownKey, config.swapTimeWindowSeconds);
-          } else {
-            logger.debug(
-              { cooldownKey },
-              'Threshold B triggered but in cooldown period'
-            );
-          }
-        }
       }
     } catch (error) {
       logger.error({ error, transfer }, 'Error processing transfer');

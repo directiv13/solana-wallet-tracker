@@ -39,7 +39,7 @@ Check the health status of the application and its dependencies.
   "config": {
     "targetTokenMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     "trackedWalletsCount": 2,
-    "pushoverSubscribersCount": 0,
+    "usersWithPushover": 0,
     "priceThresholdUsd": 300,
     "swapTimeWindowSeconds": 3600
   }

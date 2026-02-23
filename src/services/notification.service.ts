@@ -54,22 +54,15 @@ export class NotificationService {
    */
   async sendNotification(
     type: NotificationType,
-    payload: NotificationPayload,
-    additionalContext?: { cumulativeAmount?: number }
+    payload: NotificationPayload
   ): Promise<void> {
     try {
       switch (type) {
         case NotificationType.TELEGRAM_ALL:
           await this.sendTelegramNotification(payload);
           break;
-        case NotificationType.PUSHOVER_THRESHOLD_A:
+        case NotificationType.PUSHOVER_SINGLE_SWAP:
           await this.sendPushoverThresholdA(payload);
-          break;
-        case NotificationType.PUSHOVER_THRESHOLD_B:
-          await this.sendPushoverThresholdB(payload, additionalContext?.cumulativeAmount || 0);
-          break;
-        case NotificationType.PUSHOVER_5SELLS:
-          await this.sendPushover5Sells(payload);
           break;
         default:
           logger.warn({ type }, 'Unknown notification type');
@@ -139,6 +132,12 @@ ${emoji} **${action}** ${tokenDisplay}
         return;
       }
 
+      // Only send for sells with the big_sell subscription
+      if (transfer.type !== 'sell') {
+        logger.debug('Threshold A notification skipped for non-sell transaction');
+        return;
+      }
+
       const title = `🚨 Large ${transfer.type.toUpperCase()} Alert`;
       const message = `
 ${tokenSymbol || 'Token'} ${transfer.type}
@@ -149,7 +148,7 @@ Amount: ${transfer.tokenAmount.toLocaleString()}
 View: https://solscan.io/tx/${transfer.transactionSignature}
       `.trim();
 
-      await this.sendPushoverToAllSubscribers(title, message, 1); // Priority 1 (high)
+      await this.sendPushoverToSubscribers('big_sell', title, message, 1); // Priority 1 (high)
 
       logger.info(
         {
@@ -166,144 +165,81 @@ View: https://solscan.io/tx/${transfer.transactionSignature}
   }
 
   /**
-   * Send Pushover notification for threshold B (cumulative amount >= threshold in time window)
+   * Send Pushover notification for cumulative amount direction change
    */
-  private async sendPushoverThresholdB(
-    payload: NotificationPayload,
-    cumulativeAmount: number
+  async sendCumulativeDirectionChange(
+    previousAmount: number,
+    currentAmount: number,
+    periodLabel: string
   ): Promise<void> {
     try {
-      const { transfer, tokenSymbol } = payload;
-      
-      const title = `⚡ Volume Alert: ${transfer.type.toUpperCase()}`;
+      const directionLabel = currentAmount >= 0 
+        ? '🟢 Turned Positive' 
+        : '🔴 Turned Negative';
+
+      const title = `${directionLabel} - ${periodLabel}`;
       const message = `
-${tokenSymbol || 'Token'} ${transfer.type} volume surge!
-Cumulative ${transfer.type}s: $${cumulativeAmount.toFixed(2)} USD
-Time window: ${Math.floor(config.swapTimeWindowSeconds / 60)} minutes
+Cumulative direction changed (${periodLabel})
 
-Latest ${transfer.type}:
-Wallet: ${transfer.walletAddress}
-Amount: ${transfer.tokenAmount.toLocaleString()}
-${transfer.valueUsd ? `Value: $${transfer.valueUsd.toFixed(2)} USD` : ''}
+Previous: $${previousAmount.toFixed(2)} USD
+Current: $${currentAmount.toFixed(2)} USD
 
-View: https://solscan.io/tx/${transfer.transactionSignature}
+Change: $${(currentAmount - previousAmount).toFixed(2)} USD
       `.trim();
 
-      await this.sendPushoverToAllSubscribers(title, message, 1); // Priority 1 (high)
+      await this.sendPushoverToSubscribers('change_direction', title, message, 0);
 
       logger.info(
         {
-          type: transfer.type,
-          cumulativeAmount,
-          signature: transfer.transactionSignature,
+          previousAmount,
+          currentAmount,
+          periodLabel,
         },
-        'Pushover threshold B notification sent'
+        'Cumulative direction change notification sent'
       );
     } catch (error) {
-      logger.error({ error, payload, cumulativeAmount }, 'Error sending Pushover threshold B notification');
+      logger.error({ error, previousAmount, currentAmount, periodLabel }, 'Error sending direction change notification');
       throw error;
     }
   }
 
   /**
-   * Send Pushover notification for 5 sequential sells
+   * Send Pushover message to all subscribed users for a specific subscription key
    */
-  private async sendPushover5Sells(
-    payload: NotificationPayload
-  ): Promise<void> {
-    try {
-      const { transfer, tokenSymbol } = payload;
-      
-      const title = `🚨 5 Sequential Sells Alert`;
-      const message = `
-${tokenSymbol || 'Token'} - 5 sequential sells detected!
-
-Wallet: ${transfer.walletAddress}
-Latest sell: ${transfer.tokenAmount.toLocaleString()}
-${transfer.valueUsd ? `Value: $${transfer.valueUsd.toFixed(2)} USD` : ''}
-
-Threshold: Each sell > $${config.fiveSellsThresholdUsd} USD
-
-View: https://solscan.io/tx/${transfer.transactionSignature}
-      `.trim();
-
-      await this.sendPushoverTo5SellsSubscribers(title, message, 1); // Priority 1 (high)
-
-      logger.info(
-        {
-          walletAddress: transfer.walletAddress,
-          signature: transfer.transactionSignature,
-        },
-        'Pushover 5 sells notification sent'
-      );
-    } catch (error) {
-      logger.error({ error, payload }, 'Error sending Pushover 5 sells notification');
-      throw error;
-    }
-  }
-
-  /**
-   * Send Pushover message to all subscribed users
-   */
-  private async sendPushoverToAllSubscribers(
+  private async sendPushoverToSubscribers(
+    subscriptionKey: string,
     title: string,
     message: string,
     priority: number = 0
   ): Promise<void> {
-    const subscriptions = this.databaseService.getAllPushoverSubscriptions();
+    // Get all subscriptions for this key
+    const subscriptions = this.databaseService.getAllPushoverSubscriptions(subscriptionKey);
     
     if (subscriptions.length === 0) {
-      logger.warn('No Pushover subscriptions found, skipping notification');
+      logger.warn({ subscriptionKey }, 'No Pushover subscriptions found for key, skipping notification');
       return;
     }
 
-    logger.info({ count: subscriptions.length }, 'Sending Pushover to all subscribers');
+    logger.info({ count: subscriptions.length, subscriptionKey }, 'Sending Pushover to subscribers');
 
     const promises = subscriptions.map(async (sub) => {
       try {
+        // Get user's Pushover key
+        const user = this.databaseService.getUser(sub.userId);
+        if (!user || !user.pushoverUserKey) {
+          logger.warn({ userId: sub.userId }, 'User has subscription but no Pushover key');
+          return;
+        }
+
         const pushoverClient = new Pushover({
-          user: sub.pushoverUserKey,
+          user: user.pushoverUserKey,
           token: config.pushover.appToken,
         });
 
         await this.sendPushoverMessage(pushoverClient, title, message, priority);
-        logger.info({ userId: sub.userId }, 'Pushover sent to subscriber');
+        logger.info({ userId: sub.userId, subscriptionKey }, 'Pushover sent to subscriber');
       } catch (error) {
-        logger.error({ error, userId: sub.userId }, 'Failed to send Pushover to subscriber');
-      }
-    });
-
-    await Promise.allSettled(promises);
-  }
-
-  /**
-   * Send Pushover message to all 5 sells subscribed users
-   */
-  private async sendPushoverTo5SellsSubscribers(
-    title: string,
-    message: string,
-    priority: number = 0
-  ): Promise<void> {
-    const subscriptions = this.databaseService.getAllPushover5SellsSubscriptions();
-    
-    if (subscriptions.length === 0) {
-      logger.warn('No Pushover 5 Sells subscriptions found, skipping notification');
-      return;
-    }
-
-    logger.info({ count: subscriptions.length }, 'Sending Pushover to all 5 sells subscribers');
-
-    const promises = subscriptions.map(async (sub) => {
-      try {
-        const pushoverClient = new Pushover({
-          user: sub.pushoverUserKey,
-          token: config.pushover.appToken,
-        });
-
-        await this.sendPushoverMessage(pushoverClient, title, message, priority);
-        logger.info({ userId: sub.userId }, 'Pushover 5 sells sent to subscriber');
-      } catch (error) {
-        logger.error({ error, userId: sub.userId }, 'Failed to send Pushover 5 sells to subscriber');
+        logger.error({ error, userId: sub.userId, subscriptionKey }, 'Failed to send Pushover to subscriber');
       }
     });
 
@@ -360,15 +296,15 @@ View: https://solscan.io/tx/${transfer.transactionSignature}
    */
   async testPushover(): Promise<boolean> {
     try {
-      const subscriptions = this.databaseService.getAllPushoverSubscriptions();
+      const usersWithPushover = this.databaseService.getUsersWithPushoverKey();
       
-      if (subscriptions.length === 0) {
-        logger.warn('No Pushover subscriptions found to test');
+      if (usersWithPushover.length === 0) {
+        logger.warn('No users with Pushover keys found to test');
         return false;
       }
 
       const testClient = new Pushover({
-        user: subscriptions[0].pushoverUserKey,
+        user: usersWithPushover[0].pushoverUserKey,
         token: config.pushover.appToken,
       });
 

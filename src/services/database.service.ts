@@ -6,13 +6,7 @@ const logger = pino({ name: 'database-service' });
 
 export interface PushoverSubscription {
   userId: number;
-  pushoverUserKey: string;
-  createdAt: number;
-}
-
-export interface Pushover5SellsSubscription {
-  userId: number;
-  pushoverUserKey: string;
+  key: string;
   createdAt: number;
 }
 
@@ -24,6 +18,7 @@ export interface TrackedWallet {
 
 export interface User {
   userId: number;
+  pushoverUserKey: string | null;
   startedAt: number;
 }
 
@@ -46,21 +41,22 @@ export class DatabaseService {
   }
 
   private initDatabase(): void {
-    // Create pushover_subscriptions table
+    // Create users table with pushover_user_key
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS pushover_subscriptions (
+      CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
-        pushover_user_key TEXT NOT NULL,
-        created_at INTEGER NOT NULL
+        pushover_user_key TEXT,
+        started_at INTEGER NOT NULL
       )
     `);
 
-    // Create pushover_5sells_subscriptions table
+    // Create pushover_subscriptions table
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS pushover_5sells_subscriptions (
-        user_id INTEGER PRIMARY KEY,
-        pushover_user_key TEXT NOT NULL,
-        created_at INTEGER NOT NULL
+      CREATE TABLE IF NOT EXISTS pushover_subscriptions (
+        user_id INTEGER NOT NULL,
+        key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, key)
       )
     `);
 
@@ -73,107 +69,83 @@ export class DatabaseService {
       )
     `);
 
-    // Create users table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        started_at INTEGER NOT NULL
-      )
-    `);
-
     // Create indexes
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_tracked_wallets_added_by 
       ON tracked_wallets(added_by)
     `);
 
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_pushover_subscriptions_user_id 
+      ON pushover_subscriptions(user_id)
+    `);
+
+    // Migration: Drop old pushover_5sells_subscriptions table if exists
+    this.db.exec(`DROP TABLE IF EXISTS pushover_5sells_subscriptions`);
+
     logger.info('Database schema initialized');
   }
 
   // Pushover Subscriptions
   
-  subscribePushover(userId: number, pushoverUserKey: string): void {
+  subscribePushover(userId: number, key: string): void {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO pushover_subscriptions 
-      (user_id, pushover_user_key, created_at)
+      (user_id, key, created_at)
       VALUES (?, ?, ?)
     `);
     
-    stmt.run(userId, pushoverUserKey, Date.now());
-    logger.info({ userId }, 'User subscribed to Pushover notifications');
+    stmt.run(userId, key, Date.now());
+    logger.info({ userId, key }, 'User subscribed to Pushover notification');
   }
 
-  unsubscribePushover(userId: number): boolean {
-    const stmt = this.db.prepare('DELETE FROM pushover_subscriptions WHERE user_id = ?');
-    const result = stmt.run(userId);
+  unsubscribePushover(userId: number, key: string): boolean {
+    const stmt = this.db.prepare('DELETE FROM pushover_subscriptions WHERE user_id = ? AND key = ?');
+    const result = stmt.run(userId, key);
     
     if (result.changes > 0) {
-      logger.info({ userId }, 'User unsubscribed from Pushover notifications');
+      logger.info({ userId, key }, 'User unsubscribed from Pushover notification');
       return true;
     }
     return false;
   }
 
-  getPushoverSubscription(userId: number): PushoverSubscription | null {
+  getPushoverSubscriptions(userId: number): PushoverSubscription[] {
     const stmt = this.db.prepare(`
-      SELECT user_id as userId, pushover_user_key as pushoverUserKey, created_at as createdAt
+      SELECT user_id as userId, key, created_at as createdAt
       FROM pushover_subscriptions
       WHERE user_id = ?
     `);
     
-    return stmt.get(userId) as PushoverSubscription | null;
+    return stmt.all(userId) as PushoverSubscription[];
   }
 
-  getAllPushoverSubscriptions(): PushoverSubscription[] {
-    const stmt = this.db.prepare(`
-      SELECT user_id as userId, pushover_user_key as pushoverUserKey, created_at as createdAt
-      FROM pushover_subscriptions
-    `);
-    
-    return stmt.all() as PushoverSubscription[];
-  }
-
-  // Pushover 5 Sells Subscriptions
-  
-  subscribePushover5Sells(userId: number, pushoverUserKey: string): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO pushover_5sells_subscriptions 
-      (user_id, pushover_user_key, created_at)
-      VALUES (?, ?, ?)
-    `);
-    
-    stmt.run(userId, pushoverUserKey, Date.now());
-    logger.info({ userId }, 'User subscribed to Pushover 5 Sells notifications');
-  }
-
-  unsubscribePushover5Sells(userId: number): boolean {
-    const stmt = this.db.prepare('DELETE FROM pushover_5sells_subscriptions WHERE user_id = ?');
-    const result = stmt.run(userId);
-    
-    if (result.changes > 0) {
-      logger.info({ userId }, 'User unsubscribed from Pushover 5 Sells notifications');
-      return true;
+  getAllPushoverSubscriptions(key?: string): PushoverSubscription[] {
+    let stmt;
+    if (key) {
+      stmt = this.db.prepare(`
+        SELECT user_id as userId, key, created_at as createdAt
+        FROM pushover_subscriptions
+        WHERE key = ?
+      `);
+      return stmt.all(key) as PushoverSubscription[];
+    } else {
+      stmt = this.db.prepare(`
+        SELECT user_id as userId, key, created_at as createdAt
+        FROM pushover_subscriptions
+      `);
+      return stmt.all() as PushoverSubscription[];
     }
-    return false;
   }
 
-  getPushover5SellsSubscription(userId: number): Pushover5SellsSubscription | null {
+  getUsersWithPushoverKey(): { userId: number; pushoverUserKey: string }[] {
     const stmt = this.db.prepare(`
-      SELECT user_id as userId, pushover_user_key as pushoverUserKey, created_at as createdAt
-      FROM pushover_5sells_subscriptions
-      WHERE user_id = ?
+      SELECT user_id as userId, pushover_user_key as pushoverUserKey
+      FROM users
+      WHERE pushover_user_key IS NOT NULL
     `);
     
-    return stmt.get(userId) as Pushover5SellsSubscription | null;
-  }
-
-  getAllPushover5SellsSubscriptions(): Pushover5SellsSubscription[] {
-    const stmt = this.db.prepare(`
-      SELECT user_id as userId, pushover_user_key as pushoverUserKey, created_at as createdAt
-      FROM pushover_5sells_subscriptions
-    `);
-    
-    return stmt.all() as Pushover5SellsSubscription[];
+    return stmt.all() as { userId: number; pushoverUserKey: string }[];
   }
 
   // Tracked Wallets
@@ -246,8 +218,8 @@ export class DatabaseService {
   addUser(userId: number): boolean {
     try {
       const stmt = this.db.prepare(`
-        INSERT INTO users (user_id, started_at)
-        VALUES (?, ?)
+        INSERT INTO users (user_id, pushover_user_key, started_at)
+        VALUES (?, NULL, ?)
       `);
       
       stmt.run(userId, Date.now());
@@ -262,9 +234,35 @@ export class DatabaseService {
     }
   }
 
+  setPushoverUserKey(userId: number, pushoverUserKey: string): void {
+    const stmt = this.db.prepare(`
+      UPDATE users 
+      SET pushover_user_key = ?
+      WHERE user_id = ?
+    `);
+    
+    stmt.run(pushoverUserKey, userId);
+    logger.info({ userId }, 'User Pushover key updated');
+  }
+
+  removePushoverUserKey(userId: number): boolean {
+    const stmt = this.db.prepare(`
+      UPDATE users 
+      SET pushover_user_key = NULL
+      WHERE user_id = ?
+    `);
+    
+    const result = stmt.run(userId);
+    if (result.changes > 0) {
+      logger.info({ userId }, 'User Pushover key removed');
+      return true;
+    }
+    return false;
+  }
+
   getUser(userId: number): User | null {
     const stmt = this.db.prepare(`
-      SELECT user_id as userId, started_at as startedAt
+      SELECT user_id as userId, pushover_user_key as pushoverUserKey, started_at as startedAt
       FROM users 
       WHERE user_id = ?
     `);
@@ -274,7 +272,7 @@ export class DatabaseService {
 
   getAllUsers(): User[] {
     const stmt = this.db.prepare(`
-      SELECT user_id as userId, started_at as startedAt
+      SELECT user_id as userId, pushover_user_key as pushoverUserKey, started_at as startedAt
       FROM users
       ORDER BY started_at DESC
     `);
