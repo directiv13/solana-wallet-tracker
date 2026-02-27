@@ -132,7 +132,7 @@ ${emoji} **${action}** ${tokenDisplay}
         return;
       }
 
-      // Only send for sells with the big_sell subscription
+      // Only send for sells with the single_swap subscription
       if (transfer.type !== 'sell') {
         logger.debug('Threshold A notification skipped for non-sell transaction');
         return;
@@ -148,7 +148,7 @@ Amount: ${transfer.tokenAmount.toLocaleString()}
 View: https://solscan.io/tx/${transfer.transactionSignature}
       `.trim();
 
-      await this.sendPushoverToSubscribers('big_sell', title, message, 1); // Priority 1 (high)
+      await this.sendPushoverToSubscribers('single_swap', title, message, 1); // Priority 1 (high)
 
       logger.info(
         {

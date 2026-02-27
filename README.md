@@ -9,7 +9,7 @@ A high-performance Node.js TypeScript application that monitors Solana transacti
 - **Smart Notifications**:
   - 📱 **Telegram**: Instant notifications for every buy/sell of tracked tokens
   - 🔔 **Pushover Subscriptions**: User-based subscription system for customized alerts
-    - **big_sell**: High-value sell alerts (single swaps > $300 USD, 5 sequential sells)
+    - **single_swap**: High-value swap alerts (single swaps > $300 USD)
     - **change_direction**: Direction change alerts (volume surges indicating trend changes)
 - **Price Intelligence**: Automatic USD valuation using DEX Screener API with Redis caching
 - **Sliding Window Analytics**: Atomic Redis-based event counting for accurate activity detection
@@ -179,7 +179,7 @@ PRICE_CACHE_TTL_SECONDS=60
 3. Users subscribe individually via Telegram bot commands:
    - `/enable_pushover <user_key>` - Set up Pushover with your user key
    - `/subscribe <key>` - Subscribe to specific notification types
-   - Available keys: `big_sell`, `change_direction`
+   - Available keys: `single_swap`, `change_direction`
 
 #### Tracked Wallets
 
@@ -341,11 +341,10 @@ ngrok http 3000
 
 ### Pushover: Big Sell Alerts
 
-**Subscription Key:** `big_sell`
+**Subscription Key:** `single_swap`
 
 **Triggers:**
-1. Single sell value exceeds `PRICE_THRESHOLD_USD` (default: $300)
-2. 5 sequential sells detected (each over `FIVE_SELLS_THRESHOLD_USD`)
+1. Single swap value exceeds `PRICE_THRESHOLD_USD` (default: $300)
 
 **Priority:** High (Priority 1)
 
@@ -359,20 +358,6 @@ USDC sell
 Wallet: 7xKXt...gAsU
 Value: $1,234.56 USD
 Amount: 1,234.56
-
-View: https://solscan.io/tx/...
-```
-
-```
-🚨 5 Sequential Sells Alert
-
-USDC - 5 sequential sells detected!
-
-Wallet: 7xKXt...gAsU
-Latest sell: 1,234.56
-Value: $789.00 USD
-
-Threshold: Each sell > $100.00 USD
 
 View: https://solscan.io/tx/...
 ```
@@ -417,8 +402,8 @@ View: https://solscan.io/tx/...
 | `/cum_4h` | Get cumulative amounts for last 4 hours | `/cum_4h` |
 | `/enable_pushover <user_key>` | Enable Pushover notifications with your user key | `/enable_pushover uQiRzpo4DXgh...` |
 | `/disable_pushover` | Disable Pushover notifications | `/disable_pushover` |
-| `/subscribe <key>` | Subscribe to specific notification type | `/subscribe big_sell` |
-| `/unsubscribe <key>` | Unsubscribe from notification type | `/unsubscribe big_sell` |
+| `/subscribe <key>` | Subscribe to specific notification type | `/subscribe single_swap` |
+| `/unsubscribe <key>` | Unsubscribe from notification type | `/unsubscribe single_swap` |
 
 ### Admin Commands
 
@@ -433,7 +418,7 @@ View: https://solscan.io/tx/...
 
 | Key | Description | Notifications |
 |-----|-------------|---------------|
-| `big_sell` | High-value sell alerts | Single sells > $300, 5 sequential sells pattern |
+| `single_swap` | High-value swap alerts | Single swap > $1000 |
 | `change_direction` | Direction change alerts | Volume surges indicating potential trend changes |
 
 ### Database Schema

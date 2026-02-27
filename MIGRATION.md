@@ -50,13 +50,13 @@ CREATE TABLE pushover_subscriptions (
 
 **Changes:**
 - Removed `pushover_user_key` column (now in users table)
-- Added `key` column for subscription type (`big_sell`, `change_direction`)
+- Added `key` column for subscription type (`single_swap`, `change_direction`)
 - Changed primary key from `user_id` to composite key `(user_id, key)`
 - This allows users to have multiple subscriptions
 
 #### 3. Removed Table
 **Deleted:** `pushover_5sells_subscriptions` table
-- Functionality merged into main `pushover_subscriptions` table with `big_sell` key
+- Functionality merged into main `pushover_subscriptions` table with `single_swap` key
 
 ### Bot Command Changes
 
@@ -70,15 +70,15 @@ CREATE TABLE pushover_subscriptions (
 
 #### New Commands
 - `/subscribe <key>` - Subscribe to specific notification types
-  - Available keys: `big_sell`, `change_direction`
+  - Available keys: `single_swap`, `change_direction`
 - `/unsubscribe <key>` - Unsubscribe from specific notification types
 
 ### Notification Logic Changes
 
 #### Subscription Types
 
-**big_sell:**
-- High-value sell alerts (single swaps > $300 USD)
+**single_swap:**
+- High-value swap alerts (single swaps > $1000 USD)
 - 5 sequential sells pattern
 - Replaces old Threshold A (for sells only) and 5-sells notifications
 
@@ -107,7 +107,7 @@ Users who previously had Pushover notifications enabled need to:
 
 2. **Subscribe to desired notification types:**
    ```
-   /subscribe big_sell
+   /subscribe single_swap
    /subscribe change_direction
    ```
 
@@ -124,7 +124,7 @@ Users who previously had Pushover notifications enabled need to:
 
 **What needs to be reconfigured:**
 - ❌ Old Pushover subscriptions (users need to re-subscribe using new commands)
-- ❌ Old 5-sells subscriptions (merged into `big_sell` subscription type)
+- ❌ Old 5-sells subscriptions (merged into `single_swap` subscription type)
 
 ### Environment Variable Changes
 
@@ -157,9 +157,9 @@ PUSHOVER_APP_TOKEN=your_app_token
 3. **Test subscription flow:**
    ```
    /enable_pushover <user_key>
-   /subscribe big_sell
-   /status - Should show big_sell subscription
-   /unsubscribe big_sell
+   /subscribe single_swap
+   /status - Should show single_swap subscription
+   /unsubscribe single_swap
    ```
 
 4. **Test admin commands:**

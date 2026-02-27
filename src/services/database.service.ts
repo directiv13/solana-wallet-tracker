@@ -41,6 +41,7 @@ export class DatabaseService {
   }
 
   private initDatabase(): void {
+
     // Create users table with pushover_user_key
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS users (
@@ -79,9 +80,6 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_pushover_subscriptions_user_id 
       ON pushover_subscriptions(user_id)
     `);
-
-    // Migration: Drop old pushover_5sells_subscriptions table if exists
-    this.db.exec(`DROP TABLE IF EXISTS pushover_5sells_subscriptions`);
 
     logger.info('Database schema initialized');
   }

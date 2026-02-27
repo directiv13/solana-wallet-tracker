@@ -198,7 +198,7 @@ export class TelegramBotService {
             await ctx.reply(
                 '✅ Pushover user key saved!\n\n' +
                 'You can now subscribe to specific notification types using:\n' +
-                '/subscribe big_sell - High-value sell alerts\n' +
+                '/subscribe single_swap - High-value swap alerts\n' +
                 '/subscribe change_direction - Direction change alerts\n\n' +
                 'Use /status to check your subscriptions.'
             );
