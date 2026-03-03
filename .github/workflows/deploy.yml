@@ -100,13 +100,13 @@ jobs:
             docker tag solana-tracker:${{ github.sha }} solana-tracker:latest
             
             # Pull latest base images
-            docker-compose pull redis nginx
+            docker compose pull redis nginx
             
             # Stop and remove old containers
-            docker-compose down
+            docker compose down
             
             # Start new containers
-            docker-compose up -d
+            docker compose up -d
             
             # Clean up old images
             docker image prune -f
@@ -115,7 +115,7 @@ jobs:
             rm solana-tracker.tar.gz
             
             # Show status
-            docker-compose ps
+            docker compose ps
           EOF
 
       - name: Health check
@@ -136,10 +136,10 @@ jobs:
             # Show container status
             echo ""
             echo "Container status:"
-            docker-compose ps
+            docker compose ps
             
             # Check if containers are running
-            if docker-compose ps | grep -q "Up"; then
+            if docker compose ps | grep -q "Up"; then
               echo ""
               echo "✅ Containers are running"
             else
@@ -147,7 +147,7 @@ jobs:
               echo "❌ Containers failed to start"
               echo ""
               echo "=== Docker Compose Logs ==="
-              docker-compose logs --tail=100
+              docker compose logs --tail=100
               exit 1
             fi
             
@@ -161,7 +161,7 @@ jobs:
               echo ""
               echo "❌ Health check failed"
               echo "Checking app logs..."
-              docker-compose logs --tail=30 app
+              docker compose logs --tail=30 app
               exit 1
             fi
           EOF
